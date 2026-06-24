@@ -6,10 +6,13 @@ class AuthService {
   Stream<User?> get authChanges => _auth.authStateChanges();
   User? get currentUser => _auth.currentUser;
 
-  Future<User> signInAnonymously() async {
-    if (_auth.currentUser != null) return _auth.currentUser!;
-    final cred = await _auth.signInAnonymously();
-    return cred.user!;
+  /// Signs in anonymously (or reuses the existing session) and stores
+  /// [name] as the Auth display name — so it's available instantly
+  /// anywhere via `currentUser?.displayName`, with no extra Firestore read.
+  Future<User> signInAnonymously(String name) async {
+    final user = _auth.currentUser ?? (await _auth.signInAnonymously()).user!;
+    await user.updateDisplayName(name);
+    return user;
   }
 
   Future<void> logout() async {

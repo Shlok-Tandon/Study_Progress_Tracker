@@ -1,75 +1,155 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import '../models/task_item.dart';
 import '../services/firestore_service.dart';
-import 'package:firebase_auth/firebase_auth.dart';
+import '../widgets/task_card.dart';
+import '../widgets/task_detail_sheet.dart';
 
-class MyTasksScreen extends StatelessWidget {
+class MyTasksScreen extends StatefulWidget {
   const MyTasksScreen({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    final fs = FirestoreService();
+  State<MyTasksScreen> createState() => _MyTasksScreenState();
+}
 
-    return Scaffold(
-      appBar: AppBar(title: const Text('My Tasks')),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () => _showAddTaskDialog(context, fs),
-        child: const Icon(Icons.add),
-      ),
-      body: StreamBuilder<QuerySnapshot>(
-        stream: fs.streamMyTasks(),
-        builder: (context, snap) {
-          if (!snap.hasData) return const Center(child: CircularProgressIndicator());
-          final docs = snap.data!.docs;
-          if (docs.isEmpty) return const Center(child: Text('No tasks yet'));
+class _MyTasksScreenState extends State<MyTasksScreen> {
+  final _fs = FirestoreService();
+  final Set<String> _completingIds = {};
 
-          return ListView.builder(
-            itemCount: docs.length,
-            itemBuilder: (_, i) {
-              final d = docs[i].data() as Map<String, dynamic>;
-              return CheckboxListTile(
-                title: Text(d['title'] ?? ''),
-                subtitle: Text('${d['subject']} • Due: ${((d['dueDate'] as Timestamp).toDate()).toString().split(' ').first}'),
-                value: d['completed'] ?? false,
-                onChanged: (v) => fs.toggleTask(docs[i].id, v ?? false),
-              );
-            },
-          );
-        },
+  Future<void> _completeTask(TaskItem task) async {
+    setState(() => _completingIds.add(task.id));
+    await Future.delayed(const Duration(milliseconds: 220));
+
+    try {
+      await _fs.completeTask(task.id);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _completingIds.remove(task.id));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not complete "${task.title}"'), action: SnackBarAction(label: 'Retry', onPressed: () => _completeTask(task))),
+      );
+      return;
+    }
+
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('"${task.title}" completed'),
+        action: SnackBarAction(label: 'Undo', onPressed: () => _fs.addTask(title: task.title, subject: task.subject, dueDate: task.dueDate)),
       ),
     );
   }
 
-  void _showAddTaskDialog(BuildContext context, FirestoreService fs) {
-    final title = TextEditingController();
-    final subject = TextEditingController();
+  void _showAddTaskDialog() {
+    final titleController = TextEditingController();
+    final subjectController = TextEditingController();
+    DateTime dueDate = DateTime.now().add(const Duration(days: 2));
 
     showDialog(
       context: context,
-      builder: (_) => AlertDialog(
-        title: const Text('Add Task'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(controller: title, decoration: const InputDecoration(labelText: 'Task title')),
-            TextField(controller: subject, decoration: const InputDecoration(labelText: 'Subject')),
-          ],
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
-          ElevatedButton(
-            onPressed: () async {
-              await fs.addTask(
-                title: title.text.trim(),
-                subject: subject.text.trim(),
-                dueDate: DateTime.now().add(const Duration(days: 2)),
-                assignedToUid: FirebaseAuth.instance.currentUser!.uid,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              title: const Text('Add Task'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  TextField(controller: titleController, autofocus: true, decoration: const InputDecoration(labelText: 'Task title'), onChanged: (_) => setDialogState(() {})),
+                  const SizedBox(height: 8),
+                  TextField(controller: subjectController, decoration: const InputDecoration(labelText: 'Subject')),
+                  const SizedBox(height: 12),
+                  InkWell(
+                    onTap: () async {
+                      final picked = await showDatePicker(context: context, initialDate: dueDate, firstDate: DateTime.now(), lastDate: DateTime.now().add(const Duration(days: 365)));
+                      if (picked != null) setDialogState(() => dueDate = picked);
+                    },
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      child: Row(children: [const Icon(Icons.event_outlined, size: 18), const SizedBox(width: 8), Text('Due: ${dueDate.toString().split(' ').first}')]),
+                    ),
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Cancel')),
+                FilledButton(
+                  onPressed: titleController.text.trim().isEmpty
+                      ? null
+                      : () async {
+                    await _fs.addTask(title: titleController.text.trim(), subject: subjectController.text.trim(), dueDate: dueDate);
+                    if (dialogContext.mounted) Navigator.pop(dialogContext);
+                  },
+                  child: const Text('Add'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('My Tasks')),
+      floatingActionButton: FloatingActionButton(onPressed: _showAddTaskDialog, child: const Icon(Icons.add)),
+      body: StreamBuilder<QuerySnapshot>(
+        stream: _fs.streamMyTasks(),
+        builder: (context, snap) {
+          if (snap.hasError) return Center(child: Text('Something went wrong: ${snap.error}'));
+          if (!snap.hasData) {
+            return const Center(
+              child: Column(mainAxisSize: MainAxisSize.min, children: [CircularProgressIndicator(), SizedBox(height: 12), Text('Loading your tasks…')]),
+            );
+          }
+
+          final tasks = snap.data!.docs.map((d) => TaskItem.fromDoc(d)).where((t) => !t.completed).toList();
+
+          if (tasks.isEmpty) {
+            return Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.task_alt, size: 56, color: Theme.of(context).colorScheme.primary),
+                    const SizedBox(height: 12),
+                    Text('No tasks yet', style: Theme.of(context).textTheme.titleMedium),
+                    const SizedBox(height: 4),
+                    Text('Tap + to add your first task.', style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
+                  ],
+                ),
+              ),
+            );
+          }
+
+          return ListView.builder(
+            padding: const EdgeInsets.only(top: 8, bottom: 80),
+            itemCount: tasks.length,
+            itemBuilder: (_, i) {
+              final task = tasks[i];
+              final removing = _completingIds.contains(task.id);
+              return AnimatedSize(
+                key: ValueKey(task.id),
+                duration: const Duration(milliseconds: 220),
+                curve: Curves.easeOut,
+                child: AnimatedOpacity(
+                  opacity: removing ? 0 : 1,
+                  duration: const Duration(milliseconds: 200),
+                  child: TaskCard(
+                    task: task,
+                    showAssignee: false,
+                    onComplete: removing ? null : () => _completeTask(task),
+                    onTap: removing ? null : () => showTaskDetailSheet(context, task, onComplete: () => _completeTask(task)),
+                  ),
+                ),
               );
-              Navigator.pop(context);
             },
-            child: const Text('Add'),
-          ),
-        ],
+          );
+        },
       ),
     );
   }

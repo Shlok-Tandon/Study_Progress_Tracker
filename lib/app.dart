@@ -12,7 +12,7 @@ class DanceStudyTrackerApp extends StatelessWidget {
     final tp = context.watch<ThemeProvider>();
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      title: 'Dance Study Tracker',
+      title: "Folk's Study Progress Tracker",
       theme: AppTheme.lightTheme,
       darkTheme: AppTheme.darkTheme,
       themeMode: tp.themeMode,
