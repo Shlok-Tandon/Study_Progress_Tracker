@@ -1,12 +1,24 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:provider/provider.dart';
 import '../services/auth_service.dart';
+import '../services/firestore_service.dart';
+import '../theme/app_theme.dart';
 import '../theme/theme_provider.dart';
+import '../widgets/segmented_control.dart';
 import 'dc_name_screen.dart';
 
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
+
+  String _studyRank(int streak) {
+    if (streak >= 30) return 'Legend';
+    if (streak >= 14) return 'Champion';
+    if (streak >= 7) return 'Rising Star';
+    if (streak >= 1) return 'Getting Started';
+    return 'Newcomer';
+  }
 
   Future<void> _confirmLogout(BuildContext context, AuthService auth) async {
     final confirmed = await showDialog<bool>(
@@ -24,7 +36,6 @@ class SettingsScreen extends StatelessWidget {
         ],
       ),
     );
-
     if (confirmed != true) return;
     await auth.logout();
     if (!context.mounted) return;
@@ -35,6 +46,7 @@ class SettingsScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final tp = context.watch<ThemeProvider>();
     final auth = AuthService();
+    final fs = FirestoreService();
     final scheme = Theme.of(context).colorScheme;
     final name = FirebaseAuth.instance.currentUser?.displayName ?? 'DC';
     final initial = name.isNotEmpty ? name[0].toUpperCase() : '?';
@@ -44,26 +56,65 @@ class SettingsScreen extends StatelessWidget {
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
         children: [
-          Container(
-            padding: const EdgeInsets.all(20),
-            decoration: BoxDecoration(color: scheme.primaryContainer, borderRadius: BorderRadius.circular(20)),
-            child: Row(
-              children: [
-                CircleAvatar(
-                  radius: 28,
-                  backgroundColor: scheme.primary,
-                  child: Text(initial, style: TextStyle(color: scheme.onPrimary, fontSize: 22, fontWeight: FontWeight.w700)),
+          StreamBuilder<DocumentSnapshot>(
+            stream: fs.streamMyProfile(),
+            builder: (context, snap) {
+              final data = snap.data?.data() as Map<String, dynamic>?;
+              final streak = (data?['streak'] as int?) ?? 0;
+              final rank = _studyRank(streak);
+
+              return Container(
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(colors: [scheme.primary, scheme.primary.withOpacity(0.75)], begin: Alignment.topLeft, end: Alignment.bottomRight),
+                  borderRadius: BorderRadius.circular(24),
                 ),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(name, style: Theme.of(context).textTheme.titleLarge?.copyWith(color: scheme.onPrimaryContainer, fontWeight: FontWeight.w700)),
-                      const SizedBox(height: 2),
-                      Text('Signed in as this DC name', style: Theme.of(context).textTheme.bodySmall?.copyWith(color: scheme.onPrimaryContainer.withOpacity(0.75))),
-                    ],
-                  ),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 64,
+                      height: 64,
+                      decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: Colors.white.withOpacity(0.6), width: 2.5)),
+                      child: CircleAvatar(backgroundColor: Colors.white, child: Text(initial, style: AppTheme.display(size: 24, color: scheme.primary))),
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(name, style: Theme.of(context).textTheme.titleLarge?.copyWith(color: Colors.white, fontWeight: FontWeight.w700)),
+                          const SizedBox(height: 4),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+                            decoration: BoxDecoration(color: Colors.white.withOpacity(0.2), borderRadius: BorderRadius.circular(12)),
+                            child: Text('🏅 $rank', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 12)),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
+          const SizedBox(height: 24),
+          Padding(
+            padding: const EdgeInsets.only(left: 4, bottom: 8),
+            child: Text('APPEARANCE', style: Theme.of(context).textTheme.labelMedium?.copyWith(fontWeight: FontWeight.bold, letterSpacing: 0.6, color: scheme.onSurfaceVariant)),
+          ),
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(color: scheme.surfaceContainerHigh, borderRadius: BorderRadius.circular(20)),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('Theme mode', style: TextStyle(fontWeight: FontWeight.w600)),
+                const SizedBox(height: 12),
+                SegmentedControl<ThemeMode>(
+                  values: const [ThemeMode.system, ThemeMode.light, ThemeMode.dark],
+                  labels: const ['System', 'Light', 'Dark'],
+                  selected: tp.themeMode,
+                  onChanged: tp.setThemeMode,
                 ),
               ],
             ),
@@ -71,37 +122,14 @@ class SettingsScreen extends StatelessWidget {
           const SizedBox(height: 24),
           Padding(
             padding: const EdgeInsets.only(left: 4, bottom: 8),
-            child: Text('APPEARANCE', style: Theme.of(context).textTheme.labelMedium?.copyWith(fontWeight: FontWeight.bold, letterSpacing: 0.6, color: scheme.onSurfaceVariant)),
-          ),
-          Card(
-            margin: EdgeInsets.zero,
-            child: ListTile(
-              title: const Text('Theme mode'),
-              subtitle: const Text('Choose light, dark, or system'),
-              trailing: DropdownButton<ThemeMode>(
-                value: tp.themeMode,
-                underline: const SizedBox.shrink(),
-                items: const [
-                  DropdownMenuItem(value: ThemeMode.system, child: Text('System')),
-                  DropdownMenuItem(value: ThemeMode.light, child: Text('Light')),
-                  DropdownMenuItem(value: ThemeMode.dark, child: Text('Dark')),
-                ],
-                onChanged: (v) {
-                  if (v != null) tp.setThemeMode(v);
-                },
-              ),
-            ),
-          ),
-          const SizedBox(height: 24),
-          Padding(
-            padding: const EdgeInsets.only(left: 4, bottom: 8),
             child: Text('ACCOUNT', style: Theme.of(context).textTheme.labelMedium?.copyWith(fontWeight: FontWeight.bold, letterSpacing: 0.6, color: scheme.onSurfaceVariant)),
           ),
-          Card(
-            margin: EdgeInsets.zero,
+          Container(
+            decoration: BoxDecoration(color: scheme.errorContainer.withOpacity(0.35), borderRadius: BorderRadius.circular(20)),
             child: ListTile(
-              leading: Icon(Icons.logout, color: scheme.error),
-              title: Text('Logout', style: TextStyle(color: scheme.error)),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+              leading: Icon(Icons.logout_rounded, color: scheme.error),
+              title: Text('Logout', style: TextStyle(color: scheme.error, fontWeight: FontWeight.w600)),
               onTap: () => _confirmLogout(context, auth),
             ),
           ),

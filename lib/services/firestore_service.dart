@@ -8,11 +8,6 @@ class FirestoreService {
   CollectionReference get tasksRef => _db.collection('tasks');
   CollectionReference get usersRef => _db.collection('users');
 
-  /// Turns a free-typed DC name into a stable document ID, so the same
-  /// name always maps to the same Firestore doc — independent of which
-  /// (ephemeral) anonymous Auth session happens to be active. This is
-  /// what lets someone log out and back in with the same name and get
-  /// their original tasks/streak back instead of a brand new identity.
   String _slugify(String name) {
     final lower = name.trim().toLowerCase();
     final collapsed = lower.replaceAll(RegExp(r'\s+'), '_');
@@ -20,10 +15,6 @@ class FirestoreService {
     return cleaned.isEmpty ? 'dc_${DateTime.now().millisecondsSinceEpoch}' : cleaned;
   }
 
-  /// The stable profile ID for whoever is currently signed in, derived
-  /// from their Auth display name (set once at DC-name entry, and
-  /// persisted by Firebase Auth across app restarts as long as they
-  /// don't explicitly log out).
   String get _myProfileId {
     final displayName = _auth.currentUser?.displayName;
     if (displayName == null || displayName.trim().isEmpty) {
@@ -32,11 +23,6 @@ class FirestoreService {
     return _slugify(displayName);
   }
 
-  /// Looks up the profile for [name]. If it already exists, this
-  /// session's uid is added to its authUids list so it can manage that
-  /// profile's tasks going forward. If it doesn't exist, it's created
-  /// once. Either way the returned ID is stable for that name — no
-  /// duplicate profiles are ever created for the same DC name.
   Future<String> claimProfile(String name) async {
     final uid = _auth.currentUser!.uid;
     final profileId = _slugify(name);
@@ -54,6 +40,7 @@ class FirestoreService {
           'name': name.trim(),
           'streak': 0,
           'badgeCount': 0,
+          'completedCount': 0,
           'authUids': [uid],
           'createdAt': FieldValue.serverTimestamp(),
           'updatedAt': FieldValue.serverTimestamp(),
@@ -72,11 +59,11 @@ class FirestoreService {
     return tasksRef.orderBy('dueDate').snapshots();
   }
 
-  Future<void> addTask({
-    required String title,
-    required String subject,
-    required DateTime dueDate,
-  }) async {
+  Stream<DocumentSnapshot> streamMyProfile() {
+    return usersRef.doc(_myProfileId).snapshots();
+  }
+
+  Future<void> addTask({required String title, required String subject, required DateTime dueDate}) async {
     final profileId = _myProfileId;
     await tasksRef.add({
       'title': title,
@@ -90,8 +77,36 @@ class FirestoreService {
     });
   }
 
+  /// Deletes the task, then updates the assignee's streak: completing a
+  /// task today after one yesterday extends the streak by 1; a second
+  /// completion the same day leaves it unchanged; any gap resets it to 1.
+  /// Crossing a multiple of 7 awards a badge.
   Future<void> completeTask(String taskId) async {
+    final profileId = _myProfileId;
+    final userRef = usersRef.doc(profileId);
+
     await tasksRef.doc(taskId).delete();
+
+    await _db.runTransaction((tx) async {
+      final snap = await tx.get(userRef);
+      final data = snap.data() as Map<String, dynamic>? ?? {};
+      final lastDate = (data['lastCompletedAt'] as Timestamp?)?.toDate();
+      final currentStreak = (data['streak'] as int?) ?? 0;
+      final today = DateTime.now();
+
+      final isSameDay = lastDate != null && lastDate.year == today.year && lastDate.month == today.month && lastDate.day == today.day;
+      final isYesterday = lastDate != null && today.difference(DateTime(lastDate.year, lastDate.month, lastDate.day)).inDays == 1;
+
+      final newStreak = isSameDay ? currentStreak : (isYesterday ? currentStreak + 1 : 1);
+      final crossedMilestone = newStreak > currentStreak && newStreak % 7 == 0;
+
+      tx.update(userRef, {
+        'streak': newStreak,
+        'completedCount': FieldValue.increment(1),
+        'lastCompletedAt': FieldValue.serverTimestamp(),
+        if (crossedMilestone) 'badgeCount': FieldValue.increment(1),
+      });
+    });
   }
 
   Stream<QuerySnapshot> streamLeaderboard() {

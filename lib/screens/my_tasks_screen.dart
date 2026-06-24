@@ -1,7 +1,9 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_animate/flutter_animate.dart';
 import '../models/task_item.dart';
 import '../services/firestore_service.dart';
+import '../widgets/tactile_tap.dart';
 import '../widgets/task_card.dart';
 import '../widgets/task_detail_sheet.dart';
 
@@ -18,7 +20,7 @@ class _MyTasksScreenState extends State<MyTasksScreen> {
 
   Future<void> _completeTask(TaskItem task) async {
     setState(() => _completingIds.add(task.id));
-    await Future.delayed(const Duration(milliseconds: 220));
+    await Future.delayed(const Duration(milliseconds: 320)); // let the checkbox bounce play
 
     try {
       await _fs.completeTask(task.id);
@@ -34,7 +36,7 @@ class _MyTasksScreenState extends State<MyTasksScreen> {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text('"${task.title}" completed'),
+        content: Text('"${task.title}" completed 🎉'),
         action: SnackBarAction(label: 'Undo', onPressed: () => _fs.addTask(title: task.title, subject: task.subject, dueDate: task.dueDate)),
       ),
     );
@@ -93,17 +95,29 @@ class _MyTasksScreenState extends State<MyTasksScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+
     return Scaffold(
       appBar: AppBar(title: const Text('My Tasks')),
-      floatingActionButton: FloatingActionButton(onPressed: _showAddTaskDialog, child: const Icon(Icons.add)),
+      floatingActionButton: TactileTap(
+        onTap: _showAddTaskDialog,
+        child: Container(
+          width: 60,
+          height: 60,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            gradient: LinearGradient(colors: [scheme.primary, scheme.primary.withOpacity(0.7)], begin: Alignment.topLeft, end: Alignment.bottomRight),
+            boxShadow: [BoxShadow(color: scheme.primary.withOpacity(0.45), blurRadius: 20, spreadRadius: 2)],
+          ),
+          child: const Icon(Icons.add_rounded, color: Colors.white, size: 28),
+        ).animate(onPlay: (c) => c.repeat(reverse: true)).scale(end: const Offset(1.06, 1.06), duration: 900.ms, curve: Curves.easeInOut),
+      ),
       body: StreamBuilder<QuerySnapshot>(
         stream: _fs.streamMyTasks(),
         builder: (context, snap) {
           if (snap.hasError) return Center(child: Text('Something went wrong: ${snap.error}'));
           if (!snap.hasData) {
-            return const Center(
-              child: Column(mainAxisSize: MainAxisSize.min, children: [CircularProgressIndicator(), SizedBox(height: 12), Text('Loading your tasks…')]),
-            );
+            return const Center(child: Column(mainAxisSize: MainAxisSize.min, children: [CircularProgressIndicator(), SizedBox(height: 12), Text('Loading your tasks…')]));
           }
 
           final tasks = snap.data!.docs.map((d) => TaskItem.fromDoc(d)).where((t) => !t.completed).toList();
@@ -115,11 +129,11 @@ class _MyTasksScreenState extends State<MyTasksScreen> {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(Icons.task_alt, size: 56, color: Theme.of(context).colorScheme.primary),
+                    Icon(Icons.task_alt, size: 56, color: scheme.primary),
                     const SizedBox(height: 12),
                     Text('No tasks yet', style: Theme.of(context).textTheme.titleMedium),
                     const SizedBox(height: 4),
-                    Text('Tap + to add your first task.', style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
+                    Text('Tap + to add your first task.', style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: scheme.onSurfaceVariant)),
                   ],
                 ),
               ),
@@ -127,21 +141,23 @@ class _MyTasksScreenState extends State<MyTasksScreen> {
           }
 
           return ListView.builder(
-            padding: const EdgeInsets.only(top: 8, bottom: 80),
+            padding: const EdgeInsets.only(top: 8, bottom: 90),
             itemCount: tasks.length,
             itemBuilder: (_, i) {
               final task = tasks[i];
               final removing = _completingIds.contains(task.id);
               return AnimatedSize(
                 key: ValueKey(task.id),
-                duration: const Duration(milliseconds: 220),
+                duration: const Duration(milliseconds: 260),
                 curve: Curves.easeOut,
                 child: AnimatedOpacity(
                   opacity: removing ? 0 : 1,
-                  duration: const Duration(milliseconds: 200),
+                  duration: const Duration(milliseconds: 260),
                   child: TaskCard(
                     task: task,
                     showAssignee: false,
+                    showCheckbox: true,
+                    checked: removing,
                     onComplete: removing ? null : () => _completeTask(task),
                     onTap: removing ? null : () => showTaskDetailSheet(context, task, onComplete: () => _completeTask(task)),
                   ),
