@@ -24,7 +24,7 @@ class LeaderboardScreen extends StatelessWidget {
               final d = docs[i].data() as Map<String, dynamic>;
               return ListTile(
                 leading: CircleAvatar(child: Text('#${i + 1}')),
-                title: Text(d['email'] ?? 'User'),
+                title: Text(d['name'] ?? 'User'),
                 subtitle: Text('Streak: ${d['streak'] ?? 0} • Badges: ${d['badgeCount'] ?? 0}'),
               );
             },

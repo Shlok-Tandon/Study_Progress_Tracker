@@ -18,7 +18,7 @@ class TeamProgressScreen extends StatelessWidget {
           final docs = snap.data!.docs;
           if (docs.isEmpty) return const Center(child: Text('No shared tasks'));
 
-          final pending = docs.where((d) => !(d['completed'] as bool)).length;
+          final pending = docs.where((d) => !(d['completed'] as bool? ?? false)).length;
           final completed = docs.length - pending;
 
           return Column(
