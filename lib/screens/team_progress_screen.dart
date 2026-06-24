@@ -31,22 +31,28 @@ class _TeamProgressScreenState extends State<TeamProgressScreen> {
   final _searchFocus = FocusNode();
   String _query = '';
 
+  // Cached once — no more resubscribe-every-rebuild.
+  late final Stream<QuerySnapshot> _usersStream = _fs.streamUsers();
+  late final Stream<QuerySnapshot> _tasksStream = _fs.streamAllTasks();
+
+  // Hint cycles via a notifier so ONLY the hint Text rebuilds, never the screen.
   static const _hints = ['Search by task, subject, or DC name', 'Try a subject like "Math"', "Find a teammate's tasks"];
-  int _hintIndex = 0;
+  final ValueNotifier<int> _hintIndex = ValueNotifier(0);
   Timer? _hintTimer;
 
   @override
   void initState() {
     super.initState();
     _hintTimer = Timer.periodic(const Duration(seconds: 3), (_) {
-      if (!mounted || _searchFocus.hasFocus || _query.isNotEmpty) return;
-      setState(() => _hintIndex = (_hintIndex + 1) % _hints.length);
+      if (_searchFocus.hasFocus || _query.isNotEmpty) return;
+      _hintIndex.value = (_hintIndex.value + 1) % _hints.length;
     });
   }
 
   @override
   void dispose() {
     _hintTimer?.cancel();
+    _hintIndex.dispose();
     _searchController.dispose();
     _searchFocus.dispose();
     super.dispose();
@@ -96,9 +102,12 @@ class _TeamProgressScreenState extends State<TeamProgressScreen> {
                   IgnorePointer(
                     child: Padding(
                       padding: const EdgeInsets.only(left: 48),
-                      child: AnimatedSwitcher(
-                        duration: const Duration(milliseconds: 350),
-                        child: Text(_hints[_hintIndex], key: ValueKey(_hintIndex), style: TextStyle(color: scheme.onSurfaceVariant.withOpacity(0.7))),
+                      child: ValueListenableBuilder<int>(
+                        valueListenable: _hintIndex,
+                        builder: (_, i, __) => AnimatedSwitcher(
+                          duration: const Duration(milliseconds: 350),
+                          child: Text(_hints[i], key: ValueKey(i), style: TextStyle(color: scheme.onSurfaceVariant.withOpacity(0.7))),
+                        ),
                       ),
                     ),
                   ),
@@ -115,17 +124,17 @@ class _TeamProgressScreenState extends State<TeamProgressScreen> {
           ),
           Expanded(
             child: StreamBuilder<QuerySnapshot>(
-              stream: _fs.usersRef.snapshots(),
+              stream: _usersStream,
               builder: (context, userSnap) {
                 final streakByUid = <String, int>{};
                 if (userSnap.hasData) {
                   for (final d in userSnap.data!.docs) {
-                    streakByUid[d.id] = ((d.data() as Map<String, dynamic>)['streak'] as int?) ?? 0;
+                    streakByUid[d.id] = ((d.data() as Map<String, dynamic>)['streak'] as num?)?.toInt() ?? 0;
                   }
                 }
 
                 return StreamBuilder<QuerySnapshot>(
-                  stream: _fs.streamAllTasks(),
+                  stream: _tasksStream,
                   builder: (context, snap) {
                     Widget content;
 
@@ -234,15 +243,17 @@ class _ProgressHeader extends StatelessWidget {
         Row(
           children: [
             Expanded(child: Text(group.name, style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold))),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
-              decoration: BoxDecoration(
-                color: game.accent,
-                borderRadius: BorderRadius.circular(20),
-                boxShadow: [BoxShadow(color: game.accent.withOpacity(0.45), blurRadius: 10, spreadRadius: 0.5)],
-              ),
-              child: Text('${group.tasks.length} pending', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 12)),
-            ).animate(onPlay: (c) => c.repeat(reverse: true)).scale(end: const Offset(1.04, 1.04), duration: 1200.ms, curve: Curves.easeInOut),
+            RepaintBoundary(
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+                decoration: BoxDecoration(
+                  color: game.accent,
+                  borderRadius: BorderRadius.circular(20),
+                  boxShadow: [BoxShadow(color: game.accent.withOpacity(0.45), blurRadius: 10, spreadRadius: 0.5)],
+                ),
+                child: Text('${group.tasks.length} pending', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 12)),
+              ).animate(onPlay: (c) => c.repeat(reverse: true)).scale(end: const Offset(1.04, 1.04), duration: 1200.ms, curve: Curves.easeInOut),
+            ),
           ],
         ),
         const SizedBox(height: 8),

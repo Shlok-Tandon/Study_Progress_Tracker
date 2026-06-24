@@ -9,8 +9,17 @@ import '../theme/theme_provider.dart';
 import '../widgets/segmented_control.dart';
 import 'dc_name_screen.dart';
 
-class SettingsScreen extends StatelessWidget {
+class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
+
+  @override
+  State<SettingsScreen> createState() => _SettingsScreenState();
+}
+
+class _SettingsScreenState extends State<SettingsScreen> {
+  final _fs = FirestoreService();
+  final _auth = AuthService();
+  late final Stream<DocumentSnapshot> _profileStream = _fs.streamMyProfile(); // cached
 
   String _studyRank(int streak) {
     if (streak >= 30) return 'Legend';
@@ -20,7 +29,7 @@ class SettingsScreen extends StatelessWidget {
     return 'Newcomer';
   }
 
-  Future<void> _confirmLogout(BuildContext context, AuthService auth) async {
+  Future<void> _confirmLogout() async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -37,16 +46,14 @@ class SettingsScreen extends StatelessWidget {
       ),
     );
     if (confirmed != true) return;
-    await auth.logout();
-    if (!context.mounted) return;
+    await _auth.logout();
+    if (!mounted) return;
     Navigator.pushAndRemoveUntil(context, MaterialPageRoute(builder: (_) => const DcNameScreen()), (route) => false);
   }
 
   @override
   Widget build(BuildContext context) {
     final tp = context.watch<ThemeProvider>();
-    final auth = AuthService();
-    final fs = FirestoreService();
     final scheme = Theme.of(context).colorScheme;
     final name = FirebaseAuth.instance.currentUser?.displayName ?? 'DC';
     final initial = name.isNotEmpty ? name[0].toUpperCase() : '?';
@@ -57,10 +64,12 @@ class SettingsScreen extends StatelessWidget {
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
         children: [
           StreamBuilder<DocumentSnapshot>(
-            stream: fs.streamMyProfile(),
+            stream: _profileStream,
             builder: (context, snap) {
               final data = snap.data?.data() as Map<String, dynamic>?;
-              final streak = (data?['streak'] as int?) ?? 0;
+              final streak = (data?['streak'] as num?)?.toInt() ?? 0;
+              final freezes = (data?['freezeCount'] as num?)?.toInt() ?? 0;
+              final kudos = (data?['kudosReceived'] as num?)?.toInt() ?? 0;
               final rank = _studyRank(streak);
 
               return Container(
@@ -82,12 +91,21 @@ class SettingsScreen extends StatelessWidget {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(name, style: Theme.of(context).textTheme.titleLarge?.copyWith(color: Colors.white, fontWeight: FontWeight.w700)),
+                          Text(name, style: Theme.of(context).textTheme.titleLarge?.copyWith(color: Colors.white, fontWeight: FontWeight.w700), maxLines: 1, overflow: TextOverflow.ellipsis),
                           const SizedBox(height: 4),
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
                             decoration: BoxDecoration(color: Colors.white.withOpacity(0.2), borderRadius: BorderRadius.circular(12)),
                             child: Text('🏅 $rank', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 12)),
+                          ),
+                          const SizedBox(height: 8),
+                          Wrap(
+                            spacing: 12,
+                            runSpacing: 4,
+                            children: [
+                              Text('🛡️ $freezes freezes', style: const TextStyle(color: Colors.white70, fontSize: 12)),
+                              Text('👏 $kudos kudos', style: const TextStyle(color: Colors.white70, fontSize: 12)),
+                            ],
                           ),
                         ],
                       ),
@@ -130,7 +148,7 @@ class SettingsScreen extends StatelessWidget {
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
               leading: Icon(Icons.logout_rounded, color: scheme.error),
               title: Text('Logout', style: TextStyle(color: scheme.error, fontWeight: FontWeight.w600)),
-              onTap: () => _confirmLogout(context, auth),
+              onTap: _confirmLogout,
             ),
           ),
         ],

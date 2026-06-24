@@ -10,36 +10,26 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMixin {
+class _HomeScreenState extends State<HomeScreen> {
   int index = 0;
-  late final AnimationController _fadeController;
-  final pages = const [TeamProgressScreen(), MyTasksScreen(), LeaderboardScreen(), SettingsScreen()];
 
-  @override
-  void initState() {
-    super.initState();
-    _fadeController = AnimationController(vsync: this, duration: const Duration(milliseconds: 220))..forward();
-  }
-
-  @override
-  void dispose() {
-    _fadeController.dispose();
-    super.dispose();
-  }
-
-  void _onSelect(int v) {
-    if (v == index) return;
-    setState(() => index = v);
-    _fadeController.forward(from: 0);
-  }
+  // RepaintBoundary isolates each tab's painting, so an infinite animation
+  // on one tab can't dirty the paint region of another. IndexedStack keeps
+  // all four alive (state + Firestore listeners preserved across switches).
+  static const _pages = [
+    RepaintBoundary(child: TeamProgressScreen()),
+    RepaintBoundary(child: MyTasksScreen()),
+    RepaintBoundary(child: LeaderboardScreen()),
+    RepaintBoundary(child: SettingsScreen()),
+  ];
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: FadeTransition(opacity: _fadeController, child: IndexedStack(index: index, children: pages)),
+      body: IndexedStack(index: index, children: _pages),
       bottomNavigationBar: NavigationBar(
         selectedIndex: index,
-        onDestinationSelected: _onSelect,
+        onDestinationSelected: (v) => setState(() => index = v),
         destinations: const [
           NavigationDestination(icon: Icon(Icons.groups_outlined), selectedIcon: Icon(Icons.groups), label: 'Team'),
           NavigationDestination(icon: Icon(Icons.task_alt_outlined), selectedIcon: Icon(Icons.task_alt), label: 'My Tasks'),

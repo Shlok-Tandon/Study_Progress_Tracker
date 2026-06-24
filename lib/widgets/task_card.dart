@@ -68,68 +68,65 @@ class TaskCard extends StatelessWidget {
           borderRadius: BorderRadius.circular(20),
           child: InkWell(
             onTap: onTap,
-            child: IntrinsicHeight(
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Container(width: 5, color: subjectColor),
-                  Expanded(
-                    child: Padding(
-                      padding: const EdgeInsets.all(14),
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          if (showCheckbox)
-                            Padding(
-                              padding: const EdgeInsets.only(right: 10, top: 2),
-                              child: AnimatedCheckbox(checked: checked, color: scheme.primary, onTap: onComplete),
+            // Stack + Positioned gives the colored stripe full height for
+            // free — no IntrinsicHeight (which forces a 2nd layout pass).
+            child: Stack(
+              children: [
+                Positioned(top: 0, bottom: 0, left: 0, child: Container(width: 5, color: subjectColor)),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(19, 14, 14, 14), // 14 + 5px stripe
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (showCheckbox)
+                        Padding(
+                          padding: const EdgeInsets.only(right: 10, top: 2),
+                          child: AnimatedCheckbox(checked: checked, color: scheme.primary, onTap: onComplete),
+                        ),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              task.title.isEmpty ? 'Untitled task' : task.title,
+                              style: textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
                             ),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
+                            const SizedBox(height: 8),
+                            Wrap(
+                              spacing: 8,
+                              runSpacing: 6,
+                              crossAxisAlignment: WrapCrossAlignment.center,
                               children: [
-                                Text(
-                                  task.title.isEmpty ? 'Untitled task' : task.title,
-                                  style: textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
-                                  maxLines: 2,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                                const SizedBox(height: 8),
-                                Wrap(
-                                  spacing: 8,
-                                  runSpacing: 6,
-                                  crossAxisAlignment: WrapCrossAlignment.center,
-                                  children: [
-                                    if (task.subject.isNotEmpty)
-                                      Chip(
-                                        label: Text(task.subject),
-                                        backgroundColor: subjectColor.withOpacity(0.16),
-                                        labelStyle: TextStyle(color: subjectColor, fontWeight: FontWeight.w600, fontSize: 12),
-                                        visualDensity: VisualDensity.compact,
-                                        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                                        side: BorderSide.none,
-                                      ),
-                                    if (showAssignee) _InfoPill(icon: Icons.person_outline, label: task.assignedToName),
-                                    _InfoPill(icon: Icons.event_outlined, label: dueLabel),
-                                  ],
-                                ),
-                                const SizedBox(height: 6),
-                                Row(
-                                  children: [
-                                    Icon(Icons.circle, size: 8, color: urgency.color),
-                                    const SizedBox(width: 6),
-                                    Text(urgency.label, style: textTheme.labelMedium?.copyWith(color: urgency.color, fontWeight: FontWeight.w600)),
-                                  ],
-                                ),
+                                if (task.subject.isNotEmpty)
+                                  Chip(
+                                    label: Text(task.subject),
+                                    backgroundColor: subjectColor.withOpacity(0.16),
+                                    labelStyle: TextStyle(color: subjectColor, fontWeight: FontWeight.w600, fontSize: 12),
+                                    visualDensity: VisualDensity.compact,
+                                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                    side: BorderSide.none,
+                                  ),
+                                if (showAssignee) _InfoPill(icon: Icons.person_outline, label: task.assignedToName),
+                                _InfoPill(icon: Icons.event_outlined, label: dueLabel),
                               ],
                             ),
-                          ),
-                        ],
+                            const SizedBox(height: 6),
+                            Row(
+                              children: [
+                                Icon(Icons.circle, size: 8, color: urgency.color),
+                                const SizedBox(width: 6),
+                                Text(urgency.label, style: textTheme.labelMedium?.copyWith(color: urgency.color, fontWeight: FontWeight.w600)),
+                              ],
+                            ),
+                          ],
+                        ),
                       ),
-                    ),
+                    ],
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
         ),

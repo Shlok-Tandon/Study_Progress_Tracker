@@ -17,29 +17,39 @@ class MyTasksScreen extends StatefulWidget {
 class _MyTasksScreenState extends State<MyTasksScreen> {
   final _fs = FirestoreService();
   final Set<String> _completingIds = {};
+  late final Stream<QuerySnapshot> _tasksStream = _fs.streamMyTasks(); // cached once
 
   Future<void> _completeTask(TaskItem task) async {
+    if (_completingIds.contains(task.id)) return; // guard double-tap
     setState(() => _completingIds.add(task.id));
     await Future.delayed(const Duration(milliseconds: 320)); // let the checkbox bounce play
 
+    CompleteResult result;
     try {
-      await _fs.completeTask(task.id);
+      result = await _fs.completeTask(task.id);
     } catch (e) {
       if (!mounted) return;
       setState(() => _completingIds.remove(task.id));
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Could not complete "${task.title}"'), action: SnackBarAction(label: 'Retry', onPressed: () => _completeTask(task))),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('Could not complete "${task.title}"'),
+        action: SnackBarAction(label: 'Retry', onPressed: () => _completeTask(task)),
+      ));
       return;
     }
 
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('"${task.title}" completed 🎉'),
-        action: SnackBarAction(label: 'Undo', onPressed: () => _fs.addTask(title: task.title, subject: task.subject, dueDate: task.dueDate)),
+    final msg = result.badgeEarned
+        ? '🏅 Badge earned! ${result.streak}-day streak'
+        : result.freezeUsed
+        ? '🛡️ Streak freeze used — your ${result.streak}-day streak is safe'
+        : '"${task.title}" completed 🎉';
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(msg),
+      action: SnackBarAction(
+        label: 'Undo',
+        onPressed: () => _fs.addTask(title: task.title, subject: task.subject, dueDate: task.dueDate),
       ),
-    );
+    ));
   }
 
   void _showAddTaskDialog() {
@@ -99,21 +109,23 @@ class _MyTasksScreenState extends State<MyTasksScreen> {
 
     return Scaffold(
       appBar: AppBar(title: const Text('My Tasks')),
-      floatingActionButton: TactileTap(
-        onTap: _showAddTaskDialog,
-        child: Container(
-          width: 60,
-          height: 60,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            gradient: LinearGradient(colors: [scheme.primary, scheme.primary.withOpacity(0.7)], begin: Alignment.topLeft, end: Alignment.bottomRight),
-            boxShadow: [BoxShadow(color: scheme.primary.withOpacity(0.45), blurRadius: 20, spreadRadius: 2)],
-          ),
-          child: const Icon(Icons.add_rounded, color: Colors.white, size: 28),
-        ).animate(onPlay: (c) => c.repeat(reverse: true)).scale(end: const Offset(1.06, 1.06), duration: 900.ms, curve: Curves.easeInOut),
+      floatingActionButton: RepaintBoundary(
+        child: TactileTap(
+          onTap: _showAddTaskDialog,
+          child: Container(
+            width: 60,
+            height: 60,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              gradient: LinearGradient(colors: [scheme.primary, scheme.primary.withOpacity(0.7)], begin: Alignment.topLeft, end: Alignment.bottomRight),
+              boxShadow: [BoxShadow(color: scheme.primary.withOpacity(0.45), blurRadius: 20, spreadRadius: 2)],
+            ),
+            child: const Icon(Icons.add_rounded, color: Colors.white, size: 28),
+          ).animate(onPlay: (c) => c.repeat(reverse: true)).scale(end: const Offset(1.06, 1.06), duration: 900.ms, curve: Curves.easeInOut),
+        ),
       ),
       body: StreamBuilder<QuerySnapshot>(
-        stream: _fs.streamMyTasks(),
+        stream: _tasksStream,
         builder: (context, snap) {
           if (snap.hasError) return Center(child: Text('Something went wrong: ${snap.error}'));
           if (!snap.hasData) {
