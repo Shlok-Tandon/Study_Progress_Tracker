@@ -26,7 +26,7 @@ class _MyTasksScreenState extends State<MyTasksScreen> {
 
     CompleteResult result;
     try {
-      result = await _fs.completeTask(task.id);
+      result = await _fs.completeTask(task);
     } catch (e) {
       if (!mounted) return;
       setState(() => _completingIds.remove(task.id));
@@ -38,16 +38,30 @@ class _MyTasksScreenState extends State<MyTasksScreen> {
     }
 
     if (!mounted) return;
+
+    // UI clean-up: remove item ID from loading state once complete
+    setState(() => _completingIds.remove(task.id));
+
     final msg = result.badgeEarned
         ? '🏅 Badge earned! ${result.streak}-day streak'
         : result.freezeUsed
         ? '🛡️ Streak freeze used — your ${result.streak}-day streak is safe'
         : '"${task.title}" completed 🎉';
+
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
       content: Text(msg),
       action: SnackBarAction(
         label: 'Undo',
-        onPressed: () => _fs.addTask(title: task.title, subject: task.subject, dueDate: task.dueDate),
+        onPressed: () async {
+          try {
+            await _fs.undoCompleteTask(task, result);
+          } catch (e) {
+            if (!mounted) return;
+            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+              content: Text('Failed to undo task completion.'),
+            ));
+          }
+        },
       ),
     ));
   }

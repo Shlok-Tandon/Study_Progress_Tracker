@@ -1,12 +1,28 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import '../models/task_item.dart';
 
-/// Outcome of completing a task, so the UI can show the right celebration.
+/// Outcome of completing a task, containing pre and post state for precise rollback on undo.
 class CompleteResult {
   final int streak;
   final bool freezeUsed;
   final bool badgeEarned;
-  const CompleteResult({required this.streak, required this.freezeUsed, required this.badgeEarned});
+
+  // Historical snapshots needed to safely revert the database if undone
+  final int previousStreak;
+  final int previousFreezeCount;
+  final int previousBadgeCount;
+  final DateTime? previousLastCompletedAt;
+
+  const CompleteResult({
+    required this.streak,
+    required this.freezeUsed,
+    required this.badgeEarned,
+    required this.previousStreak,
+    required this.previousFreezeCount,
+    required this.previousBadgeCount,
+    this.previousLastCompletedAt,
+  });
 }
 
 class FirestoreService {
@@ -68,22 +84,21 @@ class FirestoreService {
     });
   }
 
-  /// Completes (deletes) a task and updates streak with freeze protection:
-  /// - same day      → streak unchanged
-  /// - next day      → streak + 1
-  /// - missed N days → if enough freezes, consume them and streak + 1;
-  ///                   otherwise reset to 1.
-  /// A badge (and a bonus freeze) is earned when crossing a multiple of 7.
-  Future<CompleteResult> completeTask(String taskId) async {
+  /// Completes a task and updates stats atomically within a single transaction.
+  Future<CompleteResult> completeTask(TaskItem task) async {
     final userRef = usersRef.doc(_myProfileId);
-    await tasksRef.doc(taskId).delete();
+    final taskRef = tasksRef.doc(task.id);
 
     return _db.runTransaction<CompleteResult>((tx) async {
+      // 1. READ OPERATIONS MUST OCCUR FIRST
+      // Fetch user profile data before writing any deletes or updates.
       final snap = await tx.get(userRef);
       final data = snap.data() as Map<String, dynamic>? ?? {};
+
       final lastDate = (data['lastCompletedAt'] as Timestamp?)?.toDate();
       final currentStreak = (data['streak'] as num?)?.toInt() ?? 0;
       final freezes = (data['freezeCount'] as num?)?.toInt() ?? 0;
+      final badgeCount = (data['badgeCount'] as num?)?.toInt() ?? 0;
 
       final now = DateTime.now();
       final today = DateTime(now.year, now.month, now.day);
@@ -112,15 +127,67 @@ class FirestoreService {
 
       final badgeEarned = newStreak > currentStreak && newStreak % 7 == 0;
 
+      // 2. WRITE OPERATIONS OCCUR SECOND
+      // Delete the task and update user statistics.
+      tx.delete(taskRef);
+
       tx.update(userRef, {
         'streak': newStreak,
         'completedCount': FieldValue.increment(1),
         'lastCompletedAt': FieldValue.serverTimestamp(),
         'freezeCount': freezesLeft + (badgeEarned ? 1 : 0),
+        'updatedAt': FieldValue.serverTimestamp(),
         if (badgeEarned) 'badgeCount': FieldValue.increment(1),
       });
 
-      return CompleteResult(streak: newStreak, freezeUsed: freezeUsed, badgeEarned: badgeEarned);
+      return CompleteResult(
+        streak: newStreak,
+        freezeUsed: freezeUsed,
+        badgeEarned: badgeEarned,
+        previousStreak: currentStreak,
+        previousFreezeCount: freezes,
+        previousBadgeCount: badgeCount,
+        previousLastCompletedAt: lastDate,
+      );
+    });
+  }
+
+  /// Restores a deleted task with its original ID and fully rolls back the completion metrics.
+  Future<void> undoCompleteTask(TaskItem task, CompleteResult result) async {
+    final userRef = usersRef.doc(_myProfileId);
+    final taskRef = tasksRef.doc(task.id);
+
+    await _db.runTransaction((tx) async {
+      // Recreate the task using its original document ID and parameters (Write operation)
+      tx.set(taskRef, {
+        'title': task.title,
+        'subject': task.subject,
+        'dueDate': Timestamp.fromDate(task.dueDate),
+        'assignedToUid': _myProfileId,
+        'assignedToName': _auth.currentUser?.displayName ?? 'Unassigned',
+        'completed': false,
+        'createdBy': _myProfileId,
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+
+      // Prepare user profile rollback payload
+      final rollbackData = <String, dynamic>{
+        'streak': result.previousStreak,
+        'completedCount': FieldValue.increment(-1), // Decrements count safely
+        'freezeCount': result.previousFreezeCount,
+        'badgeCount': result.previousBadgeCount,
+        'updatedAt': FieldValue.serverTimestamp(),
+      };
+
+      // Restore lastCompletedAt exactly as it was (or remove it if there wasn't one)
+      if (result.previousLastCompletedAt != null) {
+        rollbackData['lastCompletedAt'] = Timestamp.fromDate(result.previousLastCompletedAt!);
+      } else {
+        rollbackData['lastCompletedAt'] = FieldValue.delete();
+      }
+
+      // Apply rollback (Write operation)
+      tx.update(userRef, rollbackData);
     });
   }
 

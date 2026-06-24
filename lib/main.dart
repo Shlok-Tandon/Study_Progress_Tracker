@@ -5,14 +5,12 @@ import 'app.dart';
 import 'theme/theme_provider.dart';
 import 'firebase_options.dart';
 
-
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
-
-
 
   final themeProvider = ThemeProvider();
   await themeProvider.loadTheme();

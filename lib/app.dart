@@ -16,6 +16,11 @@ class DanceStudyTrackerApp extends StatelessWidget {
       theme: AppTheme.lightTheme,
       darkTheme: AppTheme.darkTheme,
       themeMode: tp.themeMode,
+
+      // OPTIMIZATION: Smoothly animate the transitions between themes
+      themeAnimationDuration: const Duration(milliseconds: 350),
+      themeAnimationCurve: Curves.easeInOut,
+
       home: const SplashScreen(),
     );
   }
