@@ -7,6 +7,7 @@ import '../services/firestore_service.dart';
 import '../theme/app_game_colors.dart';
 import '../theme/app_theme.dart';
 import '../widgets/animated_counter.dart';
+import '../widgets/empty_state.dart';
 import '../widgets/tactile_surface.dart';
 import '../widgets/task_card.dart';
 import '../widgets/task_detail_sheet.dart';
@@ -158,21 +159,47 @@ class _TeamProgressScreenState extends State<TeamProgressScreen> {
                     Widget content;
 
                     if (snap.hasError) {
-                      content = _MessageState(icon: Icons.error_outline, iconColor: scheme.error, title: 'Something went wrong', subtitle: '${snap.error}');
+                      content = EmptyState(
+                        key: const ValueKey('error'),
+                        art: const ErrorArt(),
+                        title: 'Something went wrong',
+                        subtitle: '${snap.error}',
+                        float: false,
+                      );
                     } else if (!snap.hasData) {
-                      content = const _MessageState(icon: null, title: 'Loading team progress…', showSpinner: true);
+                      content = const Center(
+                        key: ValueKey('loading'),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            CircularProgressIndicator(),
+                            SizedBox(height: 12),
+                            Text('Loading team progress…'),
+                          ],
+                        ),
+                      );
                     } else {
                       final allTasks = snap.data!.docs.map((d) => TaskItem.fromDoc(d)).where((t) => !t.completed).toList();
 
                       if (allTasks.isEmpty) {
-                        content = _MessageState(icon: Icons.celebration_outlined, iconColor: scheme.primary, title: 'All caught up!', subtitle: 'No pending tasks for the team right now.');
+                        content = const EmptyState(
+                          key: ValueKey('caught-up'),
+                          art: AllCaughtUpArt(),
+                          title: 'All caught up!',
+                          subtitle: 'No pending tasks for the team right now.',
+                        );
                       } else {
                         final visible = _query.isEmpty
                             ? allTasks
                             : allTasks.where((t) => t.title.toLowerCase().contains(_query) || t.subject.toLowerCase().contains(_query) || t.assignedToName.toLowerCase().contains(_query)).toList();
 
                         if (visible.isEmpty) {
-                          content = const _MessageState(icon: Icons.search_off, title: 'No matching tasks');
+                          content = const EmptyState(
+                            key: ValueKey('no-match'),
+                            art: NoResultsArt(),
+                            title: 'No matching tasks',
+                            subtitle: 'Try a different name or subject.',
+                          );
                         } else {
                           final groups = _groupByDc(visible, streakByUid);
                           content = ListView(
@@ -286,37 +313,6 @@ class _ProgressHeader extends StatelessWidget {
           style: Theme.of(context).textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
         ),
       ],
-    );
-  }
-}
-
-class _MessageState extends StatelessWidget {
-  final IconData? icon;
-  final Color? iconColor;
-  final String title;
-  final String? subtitle;
-  final bool showSpinner;
-  const _MessageState({required this.icon, this.iconColor, required this.title, this.subtitle, this.showSpinner = false});
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (showSpinner) const CircularProgressIndicator(),
-            if (icon != null) Icon(icon, size: 56, color: iconColor ?? Theme.of(context).colorScheme.onSurfaceVariant),
-            const SizedBox(height: 12),
-            Text(title, style: Theme.of(context).textTheme.titleMedium, textAlign: TextAlign.center),
-            if (subtitle != null) ...[
-              const SizedBox(height: 4),
-              Text(subtitle!, textAlign: TextAlign.center, style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
-            ],
-          ],
-        ),
-      ),
     );
   }
 }

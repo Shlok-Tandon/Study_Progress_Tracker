@@ -4,6 +4,7 @@ import 'package:flutter_animate/flutter_animate.dart';
 import '../models/task_item.dart';
 import '../services/firestore_service.dart';
 import '../widgets/celebration_modal.dart';
+import '../widgets/empty_state.dart';
 import '../widgets/tactile_3d.dart';
 import '../widgets/task_card.dart';
 import '../widgets/task_detail_sheet.dart';
@@ -136,7 +137,8 @@ class _MyTasksScreenState extends State<MyTasksScreen> {
                   onPressed: titleController.text.trim().isEmpty
                       ? null
                       : () async {
-                    final combinedDueDate = DateTime(dueDate.year, dueDate.month, dueDate.day, dueTime.hour, dueTime.minute);
+                    final combinedDueDate =
+                    DateTime(dueDate.year, dueDate.month, dueDate.day, dueTime.hour, dueTime.minute);
                     if (isEditing) {
                       await _fs.updateTask(
                         taskId: existing!.id,
@@ -192,19 +194,14 @@ class _MyTasksScreenState extends State<MyTasksScreen> {
           final tasks = snap.data!.docs.map((d) => TaskItem.fromDoc(d)).where((t) => !t.completed).toList();
 
           if (tasks.isEmpty) {
-            return Center(
-              child: Padding(
-                padding: const EdgeInsets.all(24),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.task_alt, size: 56, color: scheme.primary),
-                    const SizedBox(height: 12),
-                    Text('No tasks yet', style: Theme.of(context).textTheme.titleMedium),
-                    const SizedBox(height: 4),
-                    Text('Tap + to add your first task.', style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: scheme.onSurfaceVariant)),
-                  ],
-                ),
+            return EmptyState(
+              art: const EmptyTasksArt(),
+              title: 'No tasks yet',
+              subtitle: 'Add your first task and start building a streak.',
+              action: FilledButton.icon(
+                onPressed: () => _showTaskDialog(),
+                icon: const Icon(Icons.add_rounded),
+                label: const Text('Add your first task'),
               ),
             );
           }

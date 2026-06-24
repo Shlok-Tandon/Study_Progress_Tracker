@@ -4,6 +4,7 @@ import 'package:flutter_animate/flutter_animate.dart';
 import '../services/firestore_service.dart';
 import '../theme/app_game_colors.dart';
 import '../theme/app_theme.dart';
+import '../widgets/empty_state.dart';
 import '../widgets/podium.dart';
 
 class LeaderboardScreen extends StatefulWidget {
@@ -19,7 +20,6 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
     final game = Theme.of(context).extension<AppGameColors>()!;
 
     return Scaffold(
@@ -32,18 +32,10 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
 
           final docs = snap.data!.docs;
           if (docs.isEmpty) {
-            return Center(
-              child: Padding(
-                padding: const EdgeInsets.all(24),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.emoji_events_outlined, size: 56, color: scheme.primary),
-                    const SizedBox(height: 12),
-                    Text('No leaderboard data yet', style: Theme.of(context).textTheme.titleMedium),
-                  ],
-                ),
-              ),
+            return const EmptyState(
+              art: EmptyLeaderboardArt(),
+              title: 'No leaderboard data yet',
+              subtitle: 'Complete tasks to start a streak and claim the top spot.',
             );
           }
 
