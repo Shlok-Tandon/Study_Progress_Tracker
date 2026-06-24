@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:provider/provider.dart';
+import '../models/leveling.dart';
 import '../services/auth_service.dart';
 import '../services/firestore_service.dart';
 import '../theme/app_theme.dart';
@@ -36,7 +37,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         title: const Text('Switch DC name?'),
         content: const Text(
           'Logging out starts a fresh anonymous session. Your streak and tasks '
-              'are tied to your DC name — sign back in with the same name later to '
+              'are tied to your DC name, so sign back in with the same name later to '
               'pick up right where you left off.',
         ),
         actions: [
@@ -69,7 +70,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
               final data = snap.data?.data() as Map<String, dynamic>?;
               final streak = (data?['streak'] as num?)?.toInt() ?? 0;
               final freezes = (data?['freezeCount'] as num?)?.toInt() ?? 0;
+              final xp = (data?['xp'] as num?)?.toInt() ?? 0;
               final rank = _studyRank(streak);
+              final info = Leveling.fromXp(xp);
 
               return Container(
                 padding: const EdgeInsets.all(20),
@@ -77,31 +80,58 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   gradient: LinearGradient(colors: [scheme.primary, scheme.primary.withOpacity(0.75)], begin: Alignment.topLeft, end: Alignment.bottomRight),
                   borderRadius: BorderRadius.circular(24),
                 ),
-                child: Row(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Container(
-                      width: 64,
-                      height: 64,
-                      decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: Colors.white.withOpacity(0.6), width: 2.5)),
-                      child: CircleAvatar(backgroundColor: Colors.white, child: Text(initial, style: AppTheme.display(size: 24, color: scheme.primary))),
-                    ),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(name, style: Theme.of(context).textTheme.titleLarge?.copyWith(color: Colors.white, fontWeight: FontWeight.w700), maxLines: 1, overflow: TextOverflow.ellipsis),
-                          const SizedBox(height: 4),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
-                            decoration: BoxDecoration(color: Colors.white.withOpacity(0.2), borderRadius: BorderRadius.circular(12)),
-                            child: Text('🏅 $rank', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 12)),
+                    Row(
+                      children: [
+                        Container(
+                          width: 64,
+                          height: 64,
+                          decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: Colors.white.withOpacity(0.6), width: 2.5)),
+                          child: CircleAvatar(backgroundColor: Colors.white, child: Text(initial, style: AppTheme.display(size: 24, color: scheme.primary))),
+                        ),
+                        const SizedBox(width: 16),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(name, style: Theme.of(context).textTheme.titleLarge?.copyWith(color: Colors.white, fontWeight: FontWeight.w700), maxLines: 1, overflow: TextOverflow.ellipsis),
+                              const SizedBox(height: 4),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+                                decoration: BoxDecoration(color: Colors.white.withOpacity(0.2), borderRadius: BorderRadius.circular(12)),
+                                child: Text('🏅 $rank', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 12)),
+                              ),
+                              const SizedBox(height: 8),
+                              Text('🛡️ $freezes streak freezes available', style: const TextStyle(color: Colors.white70, fontSize: 12)),
+                            ],
                           ),
-                          const SizedBox(height: 8),
-                          Text('🛡️ $freezes streak freezes available', style: const TextStyle(color: Colors.white70, fontSize: 12)),
-                        ],
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 18),
+                    Row(
+                      children: [
+                        Text('⭐ Level ${info.level}', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 13)),
+                        const SizedBox(width: 8),
+                        Text(Leveling.titleFor(info.level), style: const TextStyle(color: Colors.white70, fontSize: 12)),
+                        const Spacer(),
+                        Text('$xp XP', style: const TextStyle(color: Colors.white70, fontSize: 12)),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(6),
+                      child: LinearProgressIndicator(
+                        value: info.progress,
+                        minHeight: 6,
+                        backgroundColor: Colors.white24,
+                        color: Colors.white,
                       ),
                     ),
+                    const SizedBox(height: 4),
+                    Text('${info.xpToNext} XP to Level ${info.level + 1}', style: const TextStyle(color: Colors.white70, fontSize: 11)),
                   ],
                 ),
               );

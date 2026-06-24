@@ -2,14 +2,13 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import '../theme/app_game_colors.dart';
 import '../theme/app_theme.dart';
+import 'mascot.dart';
 import 'tactile_3d.dart';
 
 /// Shows the full-screen celebration modal: confetti shower, a bouncy
-/// scale-in entrance, and a giant Tactile3D "CONTINUE" button as the
-/// only way out (the backdrop is intentionally not tap-to-dismiss — for
-/// a celebration moment, the satisfying button press IS the point).
-/// [secondaryLabel]/[onSecondary] is an optional smaller text action
-/// (e.g. "Undo") shown beneath the main button.
+/// scale-in entrance, and a giant Tactile3D "CONTINUE" button. Pass
+/// [mascotMood] to show the reacting buddy instead of the default icon
+/// (used for level-ups, badges, and daily-goal hits).
 Future<void> showCelebrationModal(
     BuildContext context, {
       required String title,
@@ -18,6 +17,7 @@ Future<void> showCelebrationModal(
       VoidCallback? onContinue,
       String? secondaryLabel,
       VoidCallback? onSecondary,
+      MascotMood? mascotMood,
     }) {
   return showGeneralDialog(
     context: context,
@@ -32,6 +32,7 @@ Future<void> showCelebrationModal(
       onContinue: onContinue,
       secondaryLabel: secondaryLabel,
       onSecondary: onSecondary,
+      mascotMood: mascotMood,
     ),
     transitionBuilder: (context, animation, _, child) {
       return FadeTransition(
@@ -46,9 +47,9 @@ Future<void> showCelebrationModal(
 }
 
 class _ConfettiPiece {
-  final double dx; // 0..1, horizontal start as a fraction of width
+  final double dx;
   final double size;
-  final double delay; // 0..1, stagger before this piece starts falling
+  final double delay;
   final double driftAmplitude;
   final double driftFrequency;
   final int colorIndex;
@@ -81,7 +82,7 @@ List<_ConfettiPiece> _buildConfetti(int count) {
 }
 
 class _ConfettiPainter extends CustomPainter {
-  final double progress; // animation controller's current value, 0..1
+  final double progress;
   final List<_ConfettiPiece> pieces;
   final List<Color> colors;
 
@@ -90,7 +91,6 @@ class _ConfettiPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     for (final piece in pieces) {
-      // Local progress accounts for this piece's stagger delay.
       final local = ((progress - piece.delay) / (1 - piece.delay)).clamp(0.0, 1.0);
       if (local <= 0) continue;
 
@@ -126,6 +126,7 @@ class _CelebrationModal extends StatefulWidget {
   final VoidCallback? onContinue;
   final String? secondaryLabel;
   final VoidCallback? onSecondary;
+  final MascotMood? mascotMood;
 
   const _CelebrationModal({
     required this.title,
@@ -134,6 +135,7 @@ class _CelebrationModal extends StatefulWidget {
     this.onContinue,
     this.secondaryLabel,
     this.onSecondary,
+    this.mascotMood,
   });
 
   @override
@@ -148,7 +150,7 @@ class _CelebrationModalState extends State<_CelebrationModal> with SingleTickerP
   void initState() {
     super.initState();
     _confetti = AnimationController(vsync: this, duration: const Duration(milliseconds: 2200))..forward();
-    _pieces = _buildConfetti(36); // one-shot burst, not a repeating loop
+    _pieces = _buildConfetti(36);
   }
 
   @override
@@ -167,9 +169,6 @@ class _CelebrationModalState extends State<_CelebrationModal> with SingleTickerP
       color: Colors.transparent,
       child: Stack(
         children: [
-          // Confetti spans the FULL screen (not just the card), isolated
-          // in its own RepaintBoundary so its ~60fps repaint never touches
-          // the static card beneath it.
           Positioned.fill(
             child: IgnorePointer(
               child: RepaintBoundary(
@@ -193,12 +192,15 @@ class _CelebrationModalState extends State<_CelebrationModal> with SingleTickerP
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Container(
-                      width: 84,
-                      height: 84,
-                      decoration: BoxDecoration(color: game.success.withOpacity(0.15), shape: BoxShape.circle),
-                      child: Icon(Icons.celebration_rounded, color: game.success, size: 46),
-                    ),
+                    if (widget.mascotMood != null)
+                      Mascot(mood: widget.mascotMood!, size: 104)
+                    else
+                      Container(
+                        width: 84,
+                        height: 84,
+                        decoration: BoxDecoration(color: game.success.withOpacity(0.15), shape: BoxShape.circle),
+                        child: Icon(Icons.celebration_rounded, color: game.success, size: 46),
+                      ),
                     const SizedBox(height: 20),
                     Text(
                       widget.title,
