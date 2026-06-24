@@ -17,17 +17,6 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
   final _fs = FirestoreService();
   late final Stream<QuerySnapshot> _stream = _fs.streamLeaderboard(); // cached
 
-  Future<void> _sendKudos(String profileId, String name) async {
-    try {
-      await _fs.sendKudos(profileId);
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('👏 Kudos sent to $name')));
-    } catch (_) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Could not send kudos')));
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
@@ -78,10 +67,6 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
                   data: docs[i].data() as Map<String, dynamic>,
                   game: game,
                   isTopThree: !hasPodium && i < 3,
-                  onKudos: () => _sendKudos(
-                    docs[i].id,
-                    ((docs[i].data() as Map<String, dynamic>)['name'] ?? 'User') as String,
-                  ),
                 ),
             ],
           );
@@ -96,8 +81,7 @@ class _LeaderboardRow extends StatelessWidget {
   final Map<String, dynamic> data;
   final AppGameColors game;
   final bool isTopThree;
-  final VoidCallback onKudos;
-  const _LeaderboardRow({required this.rank, required this.data, required this.game, required this.isTopThree, required this.onKudos});
+  const _LeaderboardRow({required this.rank, required this.data, required this.game, required this.isTopThree});
 
   @override
   Widget build(BuildContext context) {
@@ -105,76 +89,35 @@ class _LeaderboardRow extends StatelessWidget {
     final name = (data['name'] ?? 'User') as String;
     final streak = (data['streak'] as num?)?.toInt() ?? 0;
     final badges = (data['badgeCount'] as num?)?.toInt() ?? 0;
-    final kudos = (data['kudosReceived'] as num?)?.toInt() ?? 0;
     final initial = name.isNotEmpty ? name[0].toUpperCase() : '?';
     final ringColor = switch (rank) { 1 => game.gold, 2 => game.silver, 3 => game.bronze, _ => scheme.outlineVariant };
 
     Widget card = Card(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-        child: Row(
+      child: ListTile(
+        leading: Container(
+          decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: ringColor, width: 2.5)),
+          padding: const EdgeInsets.all(2),
+          child: CircleAvatar(backgroundColor: ringColor.withOpacity(0.18), child: Text(initial, style: AppTheme.display(size: 16, color: ringColor))),
+        ),
+        title: Text(name, style: const TextStyle(fontWeight: FontWeight.w600)),
+        subtitle: Row(
           children: [
-            SizedBox(width: 24, child: Text('$rank', textAlign: TextAlign.center, style: AppTheme.display(size: 16, color: scheme.onSurfaceVariant))),
-            const SizedBox(width: 8),
-            Container(
-              decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: ringColor, width: 2.5)),
-              padding: const EdgeInsets.all(2),
-              child: CircleAvatar(radius: 18, backgroundColor: ringColor.withOpacity(0.18), child: Text(initial, style: AppTheme.display(size: 16, color: ringColor))),
+            RepaintBoundary(
+              child: Icon(Icons.local_fire_department_rounded, size: 15, color: game.streak)
+                  .animate(onPlay: (c) => c.repeat(reverse: true))
+                  .scale(end: const Offset(1.12, 1.12), duration: 700.ms, curve: Curves.easeInOut)
+                  .rotate(begin: -0.015, end: 0.015, duration: 700.ms, curve: Curves.easeInOut),
             ),
+            const SizedBox(width: 4),
+            Text('$streak', style: TextStyle(color: game.streak, fontWeight: FontWeight.w600)),
             const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(name, style: const TextStyle(fontWeight: FontWeight.w600), maxLines: 1, overflow: TextOverflow.ellipsis),
-                  const SizedBox(height: 4),
-                  Wrap(
-                    spacing: 12,
-                    runSpacing: 4,
-                    crossAxisAlignment: WrapCrossAlignment.center,
-                    children: [
-                      Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          RepaintBoundary(
-                            child: Icon(Icons.local_fire_department_rounded, size: 15, color: game.streak)
-                                .animate(onPlay: (c) => c.repeat(reverse: true))
-                                .scale(end: const Offset(1.12, 1.12), duration: 700.ms, curve: Curves.easeInOut)
-                                .rotate(begin: -0.015, end: 0.015, duration: 700.ms, curve: Curves.easeInOut),
-                          ),
-                          const SizedBox(width: 4),
-                          Text('$streak', style: TextStyle(color: game.streak, fontWeight: FontWeight.w600)),
-                        ],
-                      ),
-                      Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.military_tech_rounded, size: 15, color: scheme.onSurfaceVariant),
-                          const SizedBox(width: 4),
-                          Text('$badges', style: Theme.of(context).textTheme.bodySmall),
-                        ],
-                      ),
-                      Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.emoji_emotions_outlined, size: 15, color: scheme.onSurfaceVariant),
-                          const SizedBox(width: 4),
-                          Text('$kudos', style: Theme.of(context).textTheme.bodySmall),
-                        ],
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-            IconButton(
-              icon: Icon(Icons.add_reaction_outlined, color: scheme.primary),
-              tooltip: 'Send kudos',
-              onPressed: onKudos,
-            ),
+            Icon(Icons.military_tech_rounded, size: 15, color: scheme.onSurfaceVariant),
+            const SizedBox(width: 4),
+            Text('$badges'),
           ],
         ),
+        trailing: Text('#$rank', style: AppTheme.display(size: 16, color: scheme.onSurfaceVariant)),
       ),
     ).animate().fadeIn(delay: (rank * 40).ms, duration: 260.ms).slideX(begin: 0.04, end: 0, delay: (rank * 40).ms, duration: 260.ms);
 

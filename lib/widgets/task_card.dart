@@ -55,7 +55,7 @@ class TaskCard extends StatelessWidget {
     final textTheme = Theme.of(context).textTheme;
     final urgency = _urgencyFor(task, game, scheme);
     final subjectColor = _subjectColor(task.subject, game);
-    final dueLabel = DateFormat('EEE, MMM d').format(task.dueDate);
+    final dueLabel = DateFormat('MMM d, h:mm a').format(task.dueDate);
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
@@ -68,8 +68,6 @@ class TaskCard extends StatelessWidget {
           borderRadius: BorderRadius.circular(20),
           child: InkWell(
             onTap: onTap,
-            // Stack + Positioned gives the colored stripe full height for
-            // free — no IntrinsicHeight (which forces a 2nd layout pass).
             child: Stack(
               children: [
                 Positioned(top: 0, bottom: 0, left: 0, child: Container(width: 5, color: subjectColor)),

@@ -69,7 +69,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
               final data = snap.data?.data() as Map<String, dynamic>?;
               final streak = (data?['streak'] as num?)?.toInt() ?? 0;
               final freezes = (data?['freezeCount'] as num?)?.toInt() ?? 0;
-              final kudos = (data?['kudosReceived'] as num?)?.toInt() ?? 0;
               final rank = _studyRank(streak);
 
               return Container(
@@ -99,14 +98,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             child: Text('🏅 $rank', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 12)),
                           ),
                           const SizedBox(height: 8),
-                          Wrap(
-                            spacing: 12,
-                            runSpacing: 4,
-                            children: [
-                              Text('🛡️ $freezes freezes', style: const TextStyle(color: Colors.white70, fontSize: 12)),
-                              Text('👏 $kudos kudos', style: const TextStyle(color: Colors.white70, fontSize: 12)),
-                            ],
-                          ),
+                          Text('🛡️ $freezes streak freezes available', style: const TextStyle(color: Colors.white70, fontSize: 12)),
                         ],
                       ),
                     ),

@@ -2,25 +2,27 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../models/task_item.dart';
 
-/// A read-only bottom sheet showing a task's full details. [onComplete]
-/// is only passed in from My Tasks — the Team tab omits it, since only
-/// the assignee may complete their own task.
+/// A task detail bottom sheet. [onComplete] and [onEdit] are only passed
+/// in from My Tasks — the Team tab omits both, since only the assignee
+/// may act on their own task.
 Future<void> showTaskDetailSheet(
     BuildContext context,
     TaskItem task, {
       VoidCallback? onComplete,
+      VoidCallback? onEdit,
     }) {
   return showModalBottomSheet(
     context: context,
     backgroundColor: Colors.transparent,
-    builder: (_) => _TaskDetailSheet(task: task, onComplete: onComplete),
+    builder: (_) => _TaskDetailSheet(task: task, onComplete: onComplete, onEdit: onEdit),
   );
 }
 
 class _TaskDetailSheet extends StatelessWidget {
   final TaskItem task;
   final VoidCallback? onComplete;
-  const _TaskDetailSheet({required this.task, this.onComplete});
+  final VoidCallback? onEdit;
+  const _TaskDetailSheet({required this.task, this.onComplete, this.onEdit});
 
   @override
   Widget build(BuildContext context) {
@@ -45,14 +47,29 @@ class _TaskDetailSheet extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 20),
-            Text(
-              task.title.isEmpty ? 'Untitled task' : task.title,
-              style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    task.title.isEmpty ? 'Untitled task' : task.title,
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
+                  ),
+                ),
+                if (onEdit != null)
+                  IconButton(
+                    icon: const Icon(Icons.edit_outlined),
+                    tooltip: 'Edit task',
+                    onPressed: () {
+                      Navigator.pop(context);
+                      onEdit!();
+                    },
+                  ),
+              ],
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 8),
             _DetailRow(icon: Icons.menu_book_outlined, label: 'Subject', value: task.subject.isEmpty ? '—' : task.subject),
             _DetailRow(icon: Icons.person_outline, label: 'Assigned to', value: task.assignedToName),
-            _DetailRow(icon: Icons.event_outlined, label: 'Due date', value: DateFormat('EEEE, MMM d, y').format(task.dueDate)),
+            _DetailRow(icon: Icons.event_outlined, label: 'Due', value: DateFormat("EEEE, MMM d 'at' h:mm a").format(task.dueDate)),
             if (onComplete != null) ...[
               const SizedBox(height: 20),
               SizedBox(
@@ -91,7 +108,13 @@ class _DetailRow extends StatelessWidget {
           const SizedBox(width: 12),
           Text(label, style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: scheme.onSurfaceVariant)),
           const Spacer(),
-          Text(value, style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600)),
+          Flexible(
+            child: Text(
+              value,
+              textAlign: TextAlign.right,
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
+            ),
+          ),
         ],
       ),
     );

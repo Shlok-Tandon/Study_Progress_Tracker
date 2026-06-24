@@ -3,7 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import '../models/task_item.dart';
 import '../services/firestore_service.dart';
-import '../widgets/tactile_tap.dart';
+import '../widgets/celebration_modal.dart';
+import '../widgets/tactile_3d.dart';
 import '../widgets/task_card.dart';
 import '../widgets/task_detail_sheet.dart';
 
@@ -26,7 +27,7 @@ class _MyTasksScreenState extends State<MyTasksScreen> {
 
     CompleteResult result;
     try {
-      result = await _fs.completeTask(task);
+      result = await _fs.completeTask(task.id);
     } catch (e) {
       if (!mounted) return;
       setState(() => _completingIds.remove(task.id));
@@ -39,37 +40,38 @@ class _MyTasksScreenState extends State<MyTasksScreen> {
 
     if (!mounted) return;
 
-    // UI clean-up: remove item ID from loading state once complete
-    setState(() => _completingIds.remove(task.id));
-
-    final msg = result.badgeEarned
-        ? '🏅 Badge earned! ${result.streak}-day streak'
+    final title = result.badgeEarned
+        ? '🏅 Badge Earned!'
         : result.freezeUsed
-        ? '🛡️ Streak freeze used — your ${result.streak}-day streak is safe'
-        : '"${task.title}" completed 🎉';
+        ? '🛡️ Streak Saved!'
+        : 'Task Complete!';
+    final subtitle = result.badgeEarned
+        ? '${result.streak}-day streak — keep it going!'
+        : result.freezeUsed
+        ? 'A streak freeze protected your ${result.streak}-day streak.'
+        : '"${task.title}" is done. Nice work!';
 
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Text(msg),
-      action: SnackBarAction(
-        label: 'Undo',
-        onPressed: () async {
-          try {
-            await _fs.undoCompleteTask(task, result);
-          } catch (e) {
-            if (!mounted) return;
-            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-              content: Text('Failed to undo task completion.'),
-            ));
-          }
-        },
-      ),
-    ));
+    showCelebrationModal(
+      context,
+      title: title,
+      subtitle: subtitle,
+      secondaryLabel: 'Undo',
+      onSecondary: () => _fs.addTask(title: task.title, subject: task.subject, dueDate: task.dueDate),
+    );
   }
 
-  void _showAddTaskDialog() {
-    final titleController = TextEditingController();
-    final subjectController = TextEditingController();
-    DateTime dueDate = DateTime.now().add(const Duration(days: 2));
+  /// Shared dialog for both creating a new task and editing an existing
+  /// one. When [existing] is null this adds a task; otherwise it edits
+  /// that task in place — ownership/creation fields are left untouched.
+  void _showTaskDialog({TaskItem? existing}) {
+    final isEditing = existing != null;
+    final titleController = TextEditingController(text: existing?.title ?? '');
+    final subjectController = TextEditingController(text: existing?.subject ?? '');
+
+    DateTime dueDate = existing?.dueDate ?? DateTime.now().add(const Duration(days: 2));
+    TimeOfDay dueTime = existing != null
+        ? TimeOfDay(hour: existing.dueDate.hour, minute: existing.dueDate.minute)
+        : const TimeOfDay(hour: 23, minute: 59); // default: due by end of day
 
     showDialog(
       context: context,
@@ -77,23 +79,53 @@ class _MyTasksScreenState extends State<MyTasksScreen> {
         return StatefulBuilder(
           builder: (context, setDialogState) {
             return AlertDialog(
-              title: const Text('Add Task'),
+              title: Text(isEditing ? 'Edit Task' : 'Add Task'),
               content: Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  TextField(controller: titleController, autofocus: true, decoration: const InputDecoration(labelText: 'Task title'), onChanged: (_) => setDialogState(() {})),
+                  TextField(
+                    controller: titleController,
+                    autofocus: true,
+                    decoration: const InputDecoration(labelText: 'Task title'),
+                    onChanged: (_) => setDialogState(() {}),
+                  ),
                   const SizedBox(height: 8),
                   TextField(controller: subjectController, decoration: const InputDecoration(labelText: 'Subject')),
                   const SizedBox(height: 12),
                   InkWell(
+                    borderRadius: BorderRadius.circular(8),
                     onTap: () async {
-                      final picked = await showDatePicker(context: context, initialDate: dueDate, firstDate: DateTime.now(), lastDate: DateTime.now().add(const Duration(days: 365)));
+                      final picked = await showDatePicker(
+                        context: context,
+                        initialDate: dueDate,
+                        firstDate: isEditing ? DateTime.now().subtract(const Duration(days: 365)) : DateTime.now(),
+                        lastDate: DateTime.now().add(const Duration(days: 365)),
+                      );
                       if (picked != null) setDialogState(() => dueDate = picked);
                     },
                     child: Padding(
                       padding: const EdgeInsets.symmetric(vertical: 8),
-                      child: Row(children: [const Icon(Icons.event_outlined, size: 18), const SizedBox(width: 8), Text('Due: ${dueDate.toString().split(' ').first}')]),
+                      child: Row(children: [
+                        const Icon(Icons.event_outlined, size: 18),
+                        const SizedBox(width: 8),
+                        Text('Date: ${dueDate.toString().split(' ').first}'),
+                      ]),
+                    ),
+                  ),
+                  InkWell(
+                    borderRadius: BorderRadius.circular(8),
+                    onTap: () async {
+                      final picked = await showTimePicker(context: context, initialTime: dueTime);
+                      if (picked != null) setDialogState(() => dueTime = picked);
+                    },
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      child: Row(children: [
+                        const Icon(Icons.schedule_outlined, size: 18),
+                        const SizedBox(width: 8),
+                        Text('Time: ${dueTime.format(context)}'),
+                      ]),
                     ),
                   ),
                 ],
@@ -104,10 +136,24 @@ class _MyTasksScreenState extends State<MyTasksScreen> {
                   onPressed: titleController.text.trim().isEmpty
                       ? null
                       : () async {
-                    await _fs.addTask(title: titleController.text.trim(), subject: subjectController.text.trim(), dueDate: dueDate);
+                    final combinedDueDate = DateTime(dueDate.year, dueDate.month, dueDate.day, dueTime.hour, dueTime.minute);
+                    if (isEditing) {
+                      await _fs.updateTask(
+                        taskId: existing!.id,
+                        title: titleController.text.trim(),
+                        subject: subjectController.text.trim(),
+                        dueDate: combinedDueDate,
+                      );
+                    } else {
+                      await _fs.addTask(
+                        title: titleController.text.trim(),
+                        subject: subjectController.text.trim(),
+                        dueDate: combinedDueDate,
+                      );
+                    }
                     if (dialogContext.mounted) Navigator.pop(dialogContext);
                   },
-                  child: const Text('Add'),
+                  child: Text(isEditing ? 'Save' : 'Add'),
                 ),
               ],
             );
@@ -124,19 +170,16 @@ class _MyTasksScreenState extends State<MyTasksScreen> {
     return Scaffold(
       appBar: AppBar(title: const Text('My Tasks')),
       floatingActionButton: RepaintBoundary(
-        child: TactileTap(
-          onTap: _showAddTaskDialog,
-          child: Container(
-            width: 60,
-            height: 60,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              gradient: LinearGradient(colors: [scheme.primary, scheme.primary.withOpacity(0.7)], begin: Alignment.topLeft, end: Alignment.bottomRight),
-              boxShadow: [BoxShadow(color: scheme.primary.withOpacity(0.45), blurRadius: 20, spreadRadius: 2)],
-            ),
-            child: const Icon(Icons.add_rounded, color: Colors.white, size: 28),
-          ).animate(onPlay: (c) => c.repeat(reverse: true)).scale(end: const Offset(1.06, 1.06), duration: 900.ms, curve: Curves.easeInOut),
-        ),
+        child: Tactile3DButton(
+          onTap: () => _showTaskDialog(),
+          color: scheme.primary,
+          radius: 22,
+          edgeThickness: 5,
+          width: 60,
+          height: 60,
+          padding: const EdgeInsets.all(16),
+          child: const Icon(Icons.add_rounded, color: Colors.white, size: 26),
+        ).animate(onPlay: (c) => c.repeat(reverse: true)).scale(end: const Offset(1.04, 1.04), duration: 1100.ms, curve: Curves.easeInOut),
       ),
       body: StreamBuilder<QuerySnapshot>(
         stream: _tasksStream,
@@ -185,7 +228,14 @@ class _MyTasksScreenState extends State<MyTasksScreen> {
                     showCheckbox: true,
                     checked: removing,
                     onComplete: removing ? null : () => _completeTask(task),
-                    onTap: removing ? null : () => showTaskDetailSheet(context, task, onComplete: () => _completeTask(task)),
+                    onTap: removing
+                        ? null
+                        : () => showTaskDetailSheet(
+                      context,
+                      task,
+                      onComplete: () => _completeTask(task),
+                      onEdit: () => _showTaskDialog(existing: task),
+                    ),
                   ),
                 ),
               );

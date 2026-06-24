@@ -30,12 +30,11 @@ class _TeamProgressScreenState extends State<TeamProgressScreen> {
   final _searchController = TextEditingController();
   final _searchFocus = FocusNode();
   String _query = '';
+  bool _focused = false;
 
-  // Cached once — no more resubscribe-every-rebuild.
   late final Stream<QuerySnapshot> _usersStream = _fs.streamUsers();
   late final Stream<QuerySnapshot> _tasksStream = _fs.streamAllTasks();
 
-  // Hint cycles via a notifier so ONLY the hint Text rebuilds, never the screen.
   static const _hints = ['Search by task, subject, or DC name', 'Try a subject like "Math"', "Find a teammate's tasks"];
   final ValueNotifier<int> _hintIndex = ValueNotifier(0);
   Timer? _hintTimer;
@@ -47,6 +46,7 @@ class _TeamProgressScreenState extends State<TeamProgressScreen> {
       if (_searchFocus.hasFocus || _query.isNotEmpty) return;
       _hintIndex.value = (_hintIndex.value + 1) % _hints.length;
     });
+    _searchFocus.addListener(() => setState(() => _focused = _searchFocus.hasFocus));
   }
 
   @override
@@ -85,23 +85,42 @@ class _TeamProgressScreenState extends State<TeamProgressScreen> {
             child: Stack(
               alignment: Alignment.centerLeft,
               children: [
-                Container(
+                // Gradient "edge": an outer gradient-filled container with a
+                // 2px inset, and a solid inner container on top — same
+                // two-layer trick TactileSurface uses elsewhere in the app.
+                // Brightens on focus via a plain AnimatedContainer (a
+                // discrete, focus-triggered transition — not a looping
+                // animation, so it costs nothing while idle).
+                AnimatedContainer(
+                  duration: const Duration(milliseconds: 200),
+                  padding: const EdgeInsets.all(2),
                   decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(24),
-                    border: Border.all(color: scheme.outlineVariant.withOpacity(0.6)),
-                    color: scheme.surfaceContainerHigh,
+                    borderRadius: BorderRadius.circular(26),
+                    gradient: LinearGradient(
+                      colors: _focused
+                          ? [game.accent, scheme.primary]
+                          : [game.accent.withOpacity(0.55), scheme.primary.withOpacity(0.55)],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
                   ),
-                  child: TextField(
-                    controller: _searchController,
-                    focusNode: _searchFocus,
-                    onChanged: (v) => setState(() => _query = v.trim().toLowerCase()),
-                    decoration: const InputDecoration(border: InputBorder.none, prefixIcon: Icon(Icons.search)),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(24),
+                      color: scheme.surfaceContainerHigh,
+                    ),
+                    child: TextField(
+                      controller: _searchController,
+                      focusNode: _searchFocus,
+                      onChanged: (v) => setState(() => _query = v.trim().toLowerCase()),
+                      decoration: const InputDecoration(border: InputBorder.none, prefixIcon: Icon(Icons.search)),
+                    ),
                   ),
                 ),
                 if (_query.isEmpty)
                   IgnorePointer(
                     child: Padding(
-                      padding: const EdgeInsets.only(left: 48),
+                      padding: const EdgeInsets.only(left: 50),
                       child: ValueListenableBuilder<int>(
                         valueListenable: _hintIndex,
                         builder: (_, i, __) => AnimatedSwitcher(
@@ -113,7 +132,7 @@ class _TeamProgressScreenState extends State<TeamProgressScreen> {
                   ),
                 if (_query.isNotEmpty)
                   Positioned(
-                    right: 4,
+                    right: 6,
                     child: IconButton(icon: const Icon(Icons.clear), onPressed: () {
                       _searchController.clear();
                       setState(() => _query = '');
