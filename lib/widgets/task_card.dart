@@ -12,11 +12,16 @@ class _Urgency {
   const _Urgency(this.label, this.color);
 }
 
+/// Color-coded urgency ramp: red (overdue) -> orange (today) -> amber
+/// (tomorrow) -> teal (2 days) -> green (this week) -> muted (later).
+/// Drives both the status dot and, when requested, the left border stripe.
 _Urgency _urgencyFor(TaskItem task, AppGameColors game, ColorScheme scheme) {
   final days = task.daysUntilDue;
   if (days < 0) return _Urgency('Overdue', scheme.error);
   if (days == 0) return _Urgency('Due today', game.streak);
-  if (days == 1) return _Urgency('Due tomorrow', game.accent);
+  if (days == 1) return _Urgency('Due tomorrow', game.gold);
+  if (days == 2) return _Urgency('Due in 2 days', game.accent);
+  if (days <= 6) return _Urgency('Due in $days days', game.success);
   return _Urgency('Due in $days days', scheme.outline);
 }
 
@@ -26,15 +31,16 @@ Color _subjectColor(String subject, AppGameColors game) {
   return palette[subject.toLowerCase().hashCode.abs() % palette.length];
 }
 
-/// Shared task card for Team Progress and My Tasks. [showCheckbox]
-/// controls whether the complete-action circle renders at all (Team
-/// stays read-only); [checked] drives its visual state independently
-/// of whether [onComplete] is currently enabled.
+/// Shared task card for Team Progress and My Tasks. [showCheckbox] controls
+/// whether the complete-action circle renders (Team stays read-only).
+/// [stripeByUrgency] colors the left border by deadline urgency instead of
+/// by subject — used on the Team tab for instant triage scanning.
 class TaskCard extends StatelessWidget {
   final TaskItem task;
   final bool showAssignee;
   final bool showCheckbox;
   final bool checked;
+  final bool stripeByUrgency;
   final VoidCallback? onComplete;
   final VoidCallback? onTap;
 
@@ -44,6 +50,7 @@ class TaskCard extends StatelessWidget {
     this.showAssignee = true,
     this.showCheckbox = false,
     this.checked = false,
+    this.stripeByUrgency = false,
     this.onComplete,
     this.onTap,
   });
@@ -55,6 +62,7 @@ class TaskCard extends StatelessWidget {
     final textTheme = Theme.of(context).textTheme;
     final urgency = _urgencyFor(task, game, scheme);
     final subjectColor = _subjectColor(task.subject, game);
+    final stripeColor = stripeByUrgency ? urgency.color : subjectColor;
     final dueLabel = DateFormat('MMM d, h:mm a').format(task.dueDate);
 
     return Padding(
@@ -70,7 +78,7 @@ class TaskCard extends StatelessWidget {
             onTap: onTap,
             child: Stack(
               children: [
-                Positioned(top: 0, bottom: 0, left: 0, child: Container(width: 5, color: subjectColor)),
+                Positioned(top: 0, bottom: 0, left: 0, child: Container(width: 5, color: stripeColor)),
                 Padding(
                   padding: const EdgeInsets.fromLTRB(19, 14, 14, 14), // 14 + 5px stripe
                   child: Row(

@@ -37,34 +37,51 @@ class EmptyState extends StatelessWidget {
           .moveY(begin: 0, end: -8, duration: 1800.ms, curve: Curves.easeInOut);
     }
 
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(28),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            illustration,
-            const SizedBox(height: 8),
+    final column = Padding(
+      padding: const EdgeInsets.all(28),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          illustration,
+          const SizedBox(height: 8),
+          Text(
+            title,
+            textAlign: TextAlign.center,
+            style: textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+          ),
+          if (subtitle != null) ...[
+            const SizedBox(height: 6),
             Text(
-              title,
+              subtitle!,
               textAlign: TextAlign.center,
-              style: textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+              style: textTheme.bodyMedium?.copyWith(color: scheme.onSurfaceVariant),
             ),
-            if (subtitle != null) ...[
-              const SizedBox(height: 6),
-              Text(
-                subtitle!,
-                textAlign: TextAlign.center,
-                style: textTheme.bodyMedium?.copyWith(color: scheme.onSurfaceVariant),
-              ),
-            ],
-            if (action != null) ...[
-              const SizedBox(height: 20),
-              action!,
-            ],
           ],
-        ),
+          if (action != null) ...[
+            const SizedBox(height: 20),
+            action!,
+          ],
+        ],
       ),
+    );
+
+    // Center when there's vertical room; scroll instead of overflowing when
+    // the height is squeezed. This happens on the empty Tasks screen: opening
+    // the Add-Task dialog raises the keyboard, whose inset shrinks the body
+    // sitting behind the dialog. A bare Center can't yield, so the column
+    // overflowed (~35px). LayoutBuilder + a min-height ConstrainedBox inside a
+    // SingleChildScrollView keeps it centered normally and lets it scroll when
+    // space runs short. Every caller gives this a bounded height (it always
+    // sits in a Scaffold body or an Expanded), so maxHeight is finite.
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        return SingleChildScrollView(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(minHeight: constraints.maxHeight),
+            child: Center(child: column),
+          ),
+        );
+      },
     )
         .animate()
         .fadeIn(duration: 350.ms, curve: Curves.easeOut)

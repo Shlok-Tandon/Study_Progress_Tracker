@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../widgets/tactile_nav_bar.dart';
 import 'leaderboard_screen.dart';
 import 'my_tasks_screen.dart';
 import 'settings_screen.dart';
@@ -23,19 +24,22 @@ class _HomeScreenState extends State<HomeScreen> {
     RepaintBoundary(child: SettingsScreen()),
   ];
 
+  static const _items = [
+    TactileNavItem(icon: Icons.groups_outlined, activeIcon: Icons.groups, label: 'Team'),
+    TactileNavItem(icon: Icons.task_alt_outlined, activeIcon: Icons.task_alt, label: 'My Tasks'),
+    TactileNavItem(icon: Icons.emoji_events_outlined, activeIcon: Icons.emoji_events, label: 'Leaderboard'),
+    TactileNavItem(icon: Icons.settings_outlined, activeIcon: Icons.settings, label: 'Settings'),
+  ];
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: Colors.transparent,
       body: IndexedStack(index: index, children: _pages),
-      bottomNavigationBar: NavigationBar(
+      bottomNavigationBar: TactileNavBar(
         selectedIndex: index,
-        onDestinationSelected: (v) => setState(() => index = v),
-        destinations: const [
-          NavigationDestination(icon: Icon(Icons.groups_outlined), selectedIcon: Icon(Icons.groups), label: 'Team'),
-          NavigationDestination(icon: Icon(Icons.task_alt_outlined), selectedIcon: Icon(Icons.task_alt), label: 'My Tasks'),
-          NavigationDestination(icon: Icon(Icons.emoji_events_outlined), selectedIcon: Icon(Icons.emoji_events), label: 'Leaderboard'),
-          NavigationDestination(icon: Icon(Icons.settings_outlined), selectedIcon: Icon(Icons.settings), label: 'Settings'),
-        ],
+        onSelected: (v) => setState(() => index = v),
+        items: _items,
       ),
     );
   }

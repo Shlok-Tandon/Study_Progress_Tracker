@@ -39,7 +39,7 @@ class _SplashScreenState extends State<SplashScreen> {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return Scaffold(
-      backgroundColor: scheme.surface,
+      backgroundColor: Colors.transparent, // let the app gradient show
       body: Center(
         child: AnimatedOpacity(
           opacity: _exiting ? 0 : 1,

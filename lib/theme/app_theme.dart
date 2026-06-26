@@ -64,11 +64,12 @@ class AppTheme {
         .apply(bodyColor: scheme.onSurface, displayColor: scheme.onSurface);
 
     return base.copyWith(
-      scaffoldBackgroundColor: scheme.surface,
+      // Transparent so the AppBackground gradient shows through every screen.
+      scaffoldBackgroundColor: Colors.transparent,
       textTheme: textTheme,
       extensions: [game],
       appBarTheme: AppBarTheme(
-        backgroundColor: scheme.surface,
+        backgroundColor: Colors.transparent,
         foregroundColor: scheme.onSurface,
         elevation: 0, scrolledUnderElevation: 0, centerTitle: false,
         titleTextStyle: GoogleFonts.inter(color: scheme.onSurface, fontSize: 20, fontWeight: FontWeight.w700),

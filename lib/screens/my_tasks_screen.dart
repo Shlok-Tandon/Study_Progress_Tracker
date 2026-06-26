@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import '../models/leveling.dart';
+import '../models/streak_status.dart';
 import '../models/task_item.dart';
 import '../services/firestore_service.dart';
 import '../widgets/celebration_modal.dart';
@@ -145,55 +146,58 @@ class _MyTasksScreenState extends State<MyTasksScreen> {
           builder: (context, setDialogState) {
             return AlertDialog(
               title: Text(isEditing ? 'Edit Task' : 'Add Task'),
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  TextField(
-                    controller: titleController,
-                    autofocus: true,
-                    decoration: const InputDecoration(labelText: 'Task title'),
-                    onChanged: (_) => setDialogState(() {}),
-                  ),
-                  const SizedBox(height: 8),
-                  TextField(controller: subjectController, decoration: const InputDecoration(labelText: 'Subject')),
-                  const SizedBox(height: 12),
-                  InkWell(
-                    borderRadius: BorderRadius.circular(8),
-                    onTap: () async {
-                      final picked = await showDatePicker(
-                        context: context,
-                        initialDate: dueDate,
-                        firstDate: isEditing ? DateTime.now().subtract(const Duration(days: 365)) : DateTime.now(),
-                        lastDate: DateTime.now().add(const Duration(days: 365)),
-                      );
-                      if (picked != null) setDialogState(() => dueDate = picked);
-                    },
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 8),
-                      child: Row(children: [
-                        const Icon(Icons.event_outlined, size: 18),
-                        const SizedBox(width: 8),
-                        Text('Date: ${dueDate.toString().split(' ').first}'),
-                      ]),
+              insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    TextField(
+                      controller: titleController,
+                      autofocus: true,
+                      decoration: const InputDecoration(labelText: 'Task title'),
+                      onChanged: (_) => setDialogState(() {}),
                     ),
-                  ),
-                  InkWell(
-                    borderRadius: BorderRadius.circular(8),
-                    onTap: () async {
-                      final picked = await showTimePicker(context: context, initialTime: dueTime);
-                      if (picked != null) setDialogState(() => dueTime = picked);
-                    },
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 8),
-                      child: Row(children: [
-                        const Icon(Icons.schedule_outlined, size: 18),
-                        const SizedBox(width: 8),
-                        Text('Time: ${dueTime.format(context)}'),
-                      ]),
+                    const SizedBox(height: 8),
+                    TextField(controller: subjectController, decoration: const InputDecoration(labelText: 'Subject')),
+                    const SizedBox(height: 12),
+                    InkWell(
+                      borderRadius: BorderRadius.circular(8),
+                      onTap: () async {
+                        final picked = await showDatePicker(
+                          context: context,
+                          initialDate: dueDate,
+                          firstDate: isEditing ? DateTime.now().subtract(const Duration(days: 365)) : DateTime.now(),
+                          lastDate: DateTime.now().add(const Duration(days: 365)),
+                        );
+                        if (picked != null) setDialogState(() => dueDate = picked);
+                      },
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 8),
+                        child: Row(children: [
+                          const Icon(Icons.event_outlined, size: 18),
+                          const SizedBox(width: 8),
+                          Text('Date: ${dueDate.toString().split(' ').first}'),
+                        ]),
+                      ),
                     ),
-                  ),
-                ],
+                    InkWell(
+                      borderRadius: BorderRadius.circular(8),
+                      onTap: () async {
+                        final picked = await showTimePicker(context: context, initialTime: dueTime);
+                        if (picked != null) setDialogState(() => dueTime = picked);
+                      },
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 8),
+                        child: Row(children: [
+                          const Icon(Icons.schedule_outlined, size: 18),
+                          const SizedBox(width: 8),
+                          Text('Time: ${dueTime.format(context)}'),
+                        ]),
+                      ),
+                    ),
+                  ],
+                ),
               ),
               actions: [
                 TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Cancel')),
@@ -331,8 +335,8 @@ class _MyTasksScreenState extends State<MyTasksScreen> {
 
 /// Header pinned above the task list: the reacting mascot, the lifetime
 /// level + XP-to-next bar, and today's daily-goal ring. Combines the
-/// profile stream (XP, streak, daily progress) with live [stats] (pending,
-/// overdue, due-today) to pick the mascot mood.
+/// profile stream (XP, live streak, daily progress) with live [stats]
+/// (pending, overdue, due-today) to pick the mascot mood.
 class _DailyHeader extends StatelessWidget {
   final Stream<DocumentSnapshot> stream;
   final _TaskStats? stats;
@@ -373,14 +377,23 @@ class _DailyHeader extends StatelessWidget {
       builder: (context, snap) {
         final data = snap.data?.data() as Map<String, dynamic>?;
         final xp = (data?['xp'] as num?)?.toInt() ?? 0;
-        final streak = (data?['streak'] as num?)?.toInt() ?? 0;
         final goal = (data?['dailyGoal'] as num?)?.toInt() ?? Leveling.defaultDailyGoal;
         final storedKey = data?['dailyXpDate'] as String?;
         final rawDaily = (data?['dailyXp'] as num?)?.toInt() ?? 0;
-        final todayXp = storedKey == _dateKey(DateTime.now()) ? rawDaily : 0;
+        final now = DateTime.now();
+        final todayXp = storedKey == _dateKey(now) ? rawDaily : 0;
+
+        // Live streak so a lapsed streak doesn't keep triggering the at-risk
+        // nudge as if it were still alive.
+        final streak = computeStreakStatus(
+          storedStreak: (data?['streak'] as num?)?.toInt() ?? 0,
+          lastCompletedAt: (data?['lastCompletedAt'] as Timestamp?)?.toDate(),
+          freezeCount: (data?['freezeCount'] as num?)?.toInt() ?? 0,
+          now: now,
+        ).current;
 
         final info = Leveling.fromXp(xp);
-        final mood = _mood(stats: stats, todayXp: todayXp, goal: goal, streak: streak, now: DateTime.now());
+        final mood = _mood(stats: stats, todayXp: todayXp, goal: goal, streak: streak, now: now);
 
         return Container(
           margin: const EdgeInsets.fromLTRB(16, 12, 16, 4),

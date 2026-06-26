@@ -3,8 +3,10 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:provider/provider.dart';
 import '../models/leveling.dart';
+import '../models/streak_status.dart';
 import '../services/auth_service.dart';
 import '../services/firestore_service.dart';
+import '../theme/app_game_colors.dart';
 import '../theme/app_theme.dart';
 import '../theme/theme_provider.dart';
 import '../widgets/segmented_control.dart';
@@ -56,6 +58,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Widget build(BuildContext context) {
     final tp = context.watch<ThemeProvider>();
     final scheme = Theme.of(context).colorScheme;
+    final game = Theme.of(context).extension<AppGameColors>()!;
     final name = FirebaseAuth.instance.currentUser?.displayName ?? 'DC';
     final initial = name.isNotEmpty ? name[0].toUpperCase() : '?';
 
@@ -68,9 +71,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
             stream: _profileStream,
             builder: (context, snap) {
               final data = snap.data?.data() as Map<String, dynamic>?;
-              final streak = (data?['streak'] as num?)?.toInt() ?? 0;
               final freezes = (data?['freezeCount'] as num?)?.toInt() ?? 0;
               final xp = (data?['xp'] as num?)?.toInt() ?? 0;
+
+              final status = computeStreakStatus(
+                storedStreak: (data?['streak'] as num?)?.toInt() ?? 0,
+                lastCompletedAt: (data?['lastCompletedAt'] as Timestamp?)?.toDate(),
+                freezeCount: freezes,
+                now: DateTime.now(),
+              );
+              final streak = status.current;
               final rank = _studyRank(streak);
               final info = Leveling.fromXp(xp);
 
@@ -104,6 +114,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                 child: Text('🏅 $rank', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 12)),
                               ),
                               const SizedBox(height: 8),
+                              Text(
+                                '🔥 $streak day streak${status.isBroken ? '  ·  streak reset' : ''}',
+                                style: const TextStyle(color: Colors.white70, fontSize: 12),
+                              ),
+                              const SizedBox(height: 4),
                               Text('🛡️ $freezes streak freezes available', style: const TextStyle(color: Colors.white70, fontSize: 12)),
                             ],
                           ),
@@ -120,17 +135,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         Text('$xp XP', style: const TextStyle(color: Colors.white70, fontSize: 12)),
                       ],
                     ),
-                    const SizedBox(height: 8),
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(6),
-                      child: LinearProgressIndicator(
-                        value: info.progress,
-                        minHeight: 6,
-                        backgroundColor: Colors.white24,
-                        color: Colors.white,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
+                    const SizedBox(height: 10),
+                    // Thick, high-contrast, dual-colored level bar. Dark track
+                    // separates it from the purple card; the cyan->amber fill
+                    // reads clearly as two colors and glows as it grows.
+                    _LevelBar(progress: info.progress, start: game.accent, end: game.gold),
+                    const SizedBox(height: 6),
                     Text('${info.xpToNext} XP to Level ${info.level + 1}', style: const TextStyle(color: Colors.white70, fontSize: 11)),
                   ],
                 ),
@@ -174,6 +184,48 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// Thick dual-colored progress bar with an animated fill. Sized to feel
+/// substantial (16px) so leveling up is visibly rewarding.
+class _LevelBar extends StatelessWidget {
+  final double progress; // 0..1
+  final Color start;
+  final Color end;
+  const _LevelBar({required this.progress, required this.start, required this.end});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 16,
+      decoration: BoxDecoration(
+        color: Colors.black.withOpacity(0.22), // dark track for contrast on the purple card
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: Colors.white.withOpacity(0.25)),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Align(
+        alignment: Alignment.centerLeft,
+        child: TweenAnimationBuilder<double>(
+          tween: Tween(begin: 0, end: progress.clamp(0.0, 1.0)),
+          duration: const Duration(milliseconds: 600),
+          curve: Curves.easeOutCubic,
+          builder: (context, p, _) {
+            return FractionallySizedBox(
+              widthFactor: p.clamp(0.04, 1.0), // keep a sliver visible near 0%
+              child: Container(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(colors: [start, end]),
+                  borderRadius: BorderRadius.circular(10),
+                  boxShadow: [BoxShadow(color: end.withOpacity(0.5), blurRadius: 8)],
+                ),
+              ),
+            );
+          },
+        ),
       ),
     );
   }

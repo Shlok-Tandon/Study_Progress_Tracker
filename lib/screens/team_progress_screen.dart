@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
+import '../models/streak_status.dart';
 import '../models/task_item.dart';
 import '../services/firestore_service.dart';
 import '../theme/app_game_colors.dart';
@@ -86,12 +87,6 @@ class _TeamProgressScreenState extends State<TeamProgressScreen> {
             child: Stack(
               alignment: Alignment.centerLeft,
               children: [
-                // Gradient "edge": an outer gradient-filled container with a
-                // 2px inset, and a solid inner container on top — same
-                // two-layer trick TactileSurface uses elsewhere in the app.
-                // Brightens on focus via a plain AnimatedContainer (a
-                // discrete, focus-triggered transition — not a looping
-                // animation, so it costs nothing while idle).
                 AnimatedContainer(
                   duration: const Duration(milliseconds: 200),
                   padding: const EdgeInsets.all(2),
@@ -146,10 +141,18 @@ class _TeamProgressScreenState extends State<TeamProgressScreen> {
             child: StreamBuilder<QuerySnapshot>(
               stream: _usersStream,
               builder: (context, userSnap) {
+                // Build streak map from the LIVE (re-derived) streak.
                 final streakByUid = <String, int>{};
                 if (userSnap.hasData) {
+                  final now = DateTime.now();
                   for (final d in userSnap.data!.docs) {
-                    streakByUid[d.id] = ((d.data() as Map<String, dynamic>)['streak'] as num?)?.toInt() ?? 0;
+                    final m = d.data() as Map<String, dynamic>;
+                    streakByUid[d.id] = computeStreakStatus(
+                      storedStreak: (m['streak'] as num?)?.toInt() ?? 0,
+                      lastCompletedAt: (m['lastCompletedAt'] as Timestamp?)?.toDate(),
+                      freezeCount: (m['freezeCount'] as num?)?.toInt() ?? 0,
+                      now: now,
+                    ).current;
                   }
                 }
 
@@ -219,7 +222,7 @@ class _TeamProgressScreenState extends State<TeamProgressScreen> {
                               for (final group in groups) ...[
                                 Padding(padding: const EdgeInsets.fromLTRB(16, 16, 16, 8), child: _ProgressHeader(group: group, game: game, scheme: scheme)),
                                 for (final task in group.tasks)
-                                  TaskCard(task: task, showAssignee: false, key: ValueKey(task.id), onTap: () => showTaskDetailSheet(context, task)),
+                                  TaskCard(task: task, showAssignee: false, stripeByUrgency: true, key: ValueKey(task.id), onTap: () => showTaskDetailSheet(context, task)),
                               ],
                             ],
                           );
