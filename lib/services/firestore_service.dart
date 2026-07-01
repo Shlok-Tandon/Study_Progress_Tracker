@@ -3,6 +3,15 @@ import 'package:firebase_auth/firebase_auth.dart';
 import '../models/leveling.dart';
 import '../models/task_item.dart';
 
+/// Thrown by [FirestoreService.claimProfile] when the name being claimed
+/// already exists and the supplied PIN doesn't match it.
+class WrongPinException implements Exception {
+  final String name;
+  WrongPinException(this.name);
+  @override
+  String toString() => 'Incorrect PIN for "$name".';
+}
+
 /// Exact pre-completion state of the user doc, captured inside
 /// completeTask so an Undo can restore it byte-for-byte instead of
 /// trying to algebraically invert the streak/badge/XP math.
@@ -75,6 +84,9 @@ class FirestoreService {
     return cleaned.isEmpty ? 'dc_${DateTime.now().millisecondsSinceEpoch}' : cleaned;
   }
 
+  /// PINs are 4-6 digits. Adjust the range here if you want something else.
+  bool isValidPin(String pin) => RegExp(r'^\d{4,6}$').hasMatch(pin);
+
   /// Local day key (yyyy-mm-dd) used to gate the daily-XP reset.
   String _dateKey(DateTime d) =>
       '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
@@ -87,28 +99,91 @@ class FirestoreService {
     return _slugify(displayName);
   }
 
-  Future<String> claimProfile(String name) async {
+  /// Public accessor for the current session's profile id (the slugified DC
+  /// name). Lets screens ask "is this me?" without owning their own copy of
+  /// the slugify logic. Throws StateError if no DC name is set yet (i.e.
+  /// before DcNameScreen has ever been completed) — callers that just want
+  /// a "who am I" comparison for UI purposes should catch that and fall
+  /// back to null.
+  String get myProfileId => _myProfileId;
+
+  /// Claims a DC profile by name, gated by a PIN.
+  ///
+  /// - If [name] has never been claimed, this creates the profile and
+  ///   sets [pin] as its PIN (first writer wins if two people somehow
+  ///   claim the same brand-new name at the same instant; the loser
+  ///   falls through to the "existing profile" path below and will see
+  ///   [WrongPinException] if their PIN doesn't match the winner's).
+  /// - If [name] already exists, this device must prove it knows the
+  ///   correct PIN before it's added to that profile's authUids. A wrong
+  ///   PIN throws [WrongPinException]; nothing about the real PIN is
+  ///   ever sent back to the client either way.
+  Future<String> claimProfile(String name, String pin) async {
+    if (!isValidPin(pin)) {
+      throw ArgumentError('PIN must be 4-6 digits.');
+    }
+
     final uid = _auth.currentUser!.uid;
     final profileId = _slugify(name);
     final docRef = usersRef.doc(profileId);
+    final privateRef = docRef.collection('private').doc('auth');
 
-    await _db.runTransaction((tx) async {
+    // Try to atomically claim a brand-new name. Wrapped in a transaction
+    // so a race between two people typing the same new name at once is
+    // resolved safely: exactly one of them creates the profile, and the
+    // other falls through to the existing-profile PIN check below.
+    final claimedNew = await _db.runTransaction<bool>((tx) async {
       final snap = await tx.get(docRef);
-      if (snap.exists) {
-        tx.update(docRef, {'authUids': FieldValue.arrayUnion([uid]), 'updatedAt': FieldValue.serverTimestamp()});
-      } else {
-        tx.set(docRef, {
-          'name': name.trim(),
-          'streak': 0, 'badgeCount': 0, 'completedCount': 0,
-          'freezeCount': 1, // start with a one-day cushion
-          'xp': 0, 'dailyXp': 0, 'dailyXpDate': null,
-          'dailyGoal': Leveling.defaultDailyGoal,
-          'authUids': [uid],
-          'createdAt': FieldValue.serverTimestamp(), 'updatedAt': FieldValue.serverTimestamp(),
-        });
-      }
+      if (snap.exists) return false;
+
+      tx.set(docRef, {
+        'name': name.trim(),
+        'streak': 0, 'badgeCount': 0, 'completedCount': 0,
+        'freezeCount': 1, // start with a one-day cushion
+        'xp': 0, 'dailyXp': 0, 'dailyXpDate': null,
+        'dailyGoal': Leveling.defaultDailyGoal,
+        'authUids': [uid],
+        'createdAt': FieldValue.serverTimestamp(), 'updatedAt': FieldValue.serverTimestamp(),
+      });
+      tx.set(privateRef, {'pin': pin});
+      return true;
     });
+
+    if (claimedNew) return profileId;
+
+    // Existing profile: prove PIN knowledge via a write the security
+    // rules only allow through if it matches the stored (hidden) PIN —
+    // or, for a profile that predates the PIN system entirely (no
+    // private/auth doc yet), the rules let the first claimant through
+    // so the account can be adopted.
+    final unlockRef = docRef.collection('unlocks').doc(uid);
+    try {
+      await unlockRef.set({'pin': pin, 'verifiedAt': FieldValue.serverTimestamp()});
+    } on FirebaseException catch (e) {
+      if (e.code == 'permission-denied') throw WrongPinException(name);
+      rethrow;
+    }
+
+    await docRef.update({
+      'authUids': FieldValue.arrayUnion([uid]),
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+
+    // If this profile never had a PIN (a legacy account), this is where
+    // it gets one, now that we're a verified owner. If it already had a
+    // matching PIN, this just rewrites the same value — harmless.
+    await privateRef.set({'pin': pin});
     return profileId;
+  }
+
+  /// Lets an already-signed-in owner change their own PIN (e.g. from a
+  /// future "change PIN" row in Settings). Not wired into any screen yet.
+  Future<void> changePin(String newPin) async {
+    if (!isValidPin(newPin)) {
+      throw ArgumentError('PIN must be 4-6 digits.');
+    }
+    final profileId = _myProfileId;
+    await usersRef.doc(profileId).collection('private').doc('auth').update({'pin': newPin});
   }
 
   Stream<QuerySnapshot> streamMyTasks() =>
