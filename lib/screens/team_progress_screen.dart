@@ -49,7 +49,7 @@ class _TeamProgressScreenState extends State<TeamProgressScreen> {
     }
   }
 
-  static const _hints = ['Search by task, subject, or DC name', 'Try a subject like "Math"', "Find a teammate's tasks"];
+  static const _hints = ['Search by task, subject, or DC name', "Find a teammate's tasks"];
   final ValueNotifier<int> _hintIndex = ValueNotifier(0);
   Timer? _hintTimer;
 
