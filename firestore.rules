@@ -2,62 +2,132 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // ---- Public profile: name, streak, xp, badges, etc. ----
+    function isSignedIn() { return request.auth != null; }
+    function myUid() { return request.auth.uid; }
+    function userAuthUids(pid) {
+      return get(/databases/$(database)/documents/users/$(pid)).data.authUids;
+    }
+    function userData(pid) {
+      return get(/databases/$(database)/documents/users/$(pid)).data;
+    }
+    function iOwn(pid) {
+      return isSignedIn() && myUid() in userAuthUids(pid);
+    }
+
+    // ------------------------------------------------------------------
+    // Teams. You create these four docs by hand in the Firebase console
+    // (see the setup guide). The app can read a team's public info (its
+    // label) but never its codes, and can never create or edit a team.
+    // ------------------------------------------------------------------
+    match /teams/{teamId} {
+      allow read: if isSignedIn();
+      allow write: if false; // teams are console-managed only
+
+      // The member/leader codes. Unreadable and unwritable from the app —
+      // only the console (which bypasses rules) can see or set them.
+      match /private/codes {
+        allow read, write: if false;
+      }
+
+      // Proof that a joining device knows the correct code for the role it
+      // is claiming. The write only succeeds if the submitted code matches
+      // the stored member code (for a member) or leader code (for a leader)
+      // — that match is exactly what verifies the code at signup. Never
+      // readable from the app.
+      match /joins/{uid} {
+        allow read: if false;
+        allow create, update: if isSignedIn()
+          && uid == myUid()
+          && (
+            (request.resource.data.role == 'member'
+              && request.resource.data.code == get(/databases/$(database)/documents/teams/$(teamId)/private/codes).data.memberCode)
+            || (request.resource.data.role == 'leader'
+              && request.resource.data.code == get(/databases/$(database)/documents/teams/$(teamId)/private/codes).data.leaderCode)
+          );
+        allow delete: if false;
+      }
+    }
+
+    // ------------------------------------------------------------------
+    // Profiles.
+    // ------------------------------------------------------------------
     match /users/{profileId} {
-      allow read: if request.auth != null;
+      allow read: if isSignedIn();
 
-      // Brand-new profile (this name has never been claimed before).
-      allow create: if request.auth != null;
+      // Brand-new profile. Must declare a valid team + role, list your uid
+      // as an owner, and be backed by a matching join proof for this device
+      // (that proof is what verified the team code). The join's role must
+      // equal the role being written, so you can't claim "leader" on the
+      // strength of a member code.
+      allow create: if isSignedIn()
+        && request.resource.data.role in ['member', 'leader']
+        && request.resource.data.teamId is string
+        && myUid() in request.resource.data.authUids
+        && exists(/databases/$(database)/documents/teams/$(request.resource.data.teamId)/joins/$(myUid()))
+        && get(/databases/$(database)/documents/teams/$(request.resource.data.teamId)/joins/$(myUid())).data.role == request.resource.data.role;
 
-      allow update: if request.auth != null && (
-        // Owner: your uid is already in the profile's authUids.
-        request.auth.uid in resource.data.authUids
+      allow update: if isSignedIn() && (
+        // Owner updating their own profile (streak/XP/badges/etc.). teamId
+        // and role are LOCKED here — a member can't silently promote
+        // themselves to leader or hop teams from the client.
+        (myUid() in resource.data.authUids
+          && request.resource.data.teamId == resource.data.teamId
+          && request.resource.data.role == resource.data.role)
 
-        // Claiming an existing profile from a new session: only
-        // authUids/updatedAt may change, your own uid must be the one
-        // being added, and you must have already proven you know the
-        // PIN (see /unlocks/{uid} below) — that proof is what actually
-        // gates this branch.
+        // Adopting an existing profile on a new device: only authUids +
+        // updatedAt may change, your uid must be the one added, and you
+        // must have proven the PIN via /unlocks/{uid}.
         || (
           request.resource.data.diff(resource.data).affectedKeys().hasOnly(['authUids', 'updatedAt'])
-          && request.auth.uid in request.resource.data.authUids
-          && exists(/databases/$(database)/documents/users/$(profileId)/unlocks/$(request.auth.uid))
+          && myUid() in request.resource.data.authUids
+          && exists(/databases/$(database)/documents/users/$(profileId)/unlocks/$(myUid()))
         )
       );
 
-      // ---- The PIN itself. Nobody can ever read this from the app —
-      // only via the Firebase Console (which bypasses these rules
-      // entirely), so you can view or manually reset a PIN as an admin
-      // without any user ever being able to see one. ----
+      // The PIN. Never app-readable; only the console can view/reset it.
       match /private/auth {
         allow read: if false;
-
-        // Set once, at first signup, when the profile doc doesn't exist yet.
-        allow create: if request.auth != null;
-
-        // Let an already-authorized owner change their own PIN later
-        // (e.g. a "change PIN" option in Settings, if you add one).
-        allow update: if request.auth != null
-          && request.auth.uid in get(/databases/$(database)/documents/users/$(profileId)).data.authUids;
-
+        allow create: if isSignedIn();          // set once, at first signup
+        allow update: if iOwn(profileId);        // owner-only PIN change
         allow delete: if false;
       }
 
-      // ---- Proof that a claiming device knows the PIN. Also never
-      // client-readable — its only purpose is to let the update rule
-      // above check exists(), it's not meant to be read back. ----
+      // PIN proof. Write only if the submitted PIN matches the stored one.
       match /unlocks/{uid} {
         allow read: if false;
-        allow write: if request.auth != null
-          && request.auth.uid == uid
+        allow write: if isSignedIn()
+          && uid == myUid()
           && request.resource.data.pin == get(/databases/$(database)/documents/users/$(profileId)/private/auth).data.pin;
       }
     }
 
+    // ------------------------------------------------------------------
+    // Tasks. Reads are open to any signed-in user; the app scopes what it
+    // shows by teamId (see the security note in the setup guide). WRITES
+    // are strictly controlled below.
+    // ------------------------------------------------------------------
     match /tasks/{taskId} {
-      allow read, create: if request.auth != null;
-      allow update, delete: if request.auth != null &&
-        request.auth.uid in get(/databases/$(database)/documents/users/$(resource.data.assignedToUid)).data.authUids;
+      allow read: if isSignedIn();
+
+      // Create: either you're assigning to yourself, or you're a leader
+      // assigning within your own team to a member of that same team.
+      allow create: if isSignedIn()
+        && myUid() in userAuthUids(request.resource.data.createdBy)
+        && (
+          request.resource.data.assignedToUid == request.resource.data.createdBy
+          || (
+            userData(request.resource.data.createdBy).role == 'leader'
+            && userData(request.resource.data.createdBy).teamId == request.resource.data.teamId
+            && userData(request.resource.data.assignedToUid).teamId == request.resource.data.teamId
+          )
+        );
+
+      // Update / delete: the assignee (to edit or complete their task) or
+      // the leader who created it (to fix or remove a mis-assignment).
+      allow update, delete: if isSignedIn() && (
+        myUid() in userAuthUids(resource.data.assignedToUid)
+        || myUid() in userAuthUids(resource.data.createdBy)
+      );
     }
   }
 }

@@ -22,6 +22,7 @@ class _LbEntry {
   final int badges;
   _LbEntry(this.data, this.streak, this.badges);
   String get name => (data['name'] ?? 'User') as String;
+  bool get isLeader => (data['role'] as String?) == 'leader';
 }
 
 /// Ring color by rank: gold/silver/bronze for the top 3, then a vibrant
@@ -41,11 +42,31 @@ Color rankRingColor(int rank, AppGameColors game, ColorScheme scheme) {
 
 class _LeaderboardScreenState extends State<LeaderboardScreen> {
   final _fs = FirestoreService();
-  late final Stream<QuerySnapshot> _stream = _fs.streamLeaderboard(); // cached
+
+  // Resolve which team to rank within, then stream just that team.
+  Stream<QuerySnapshot>? _stream;
+
+  @override
+  void initState() {
+    super.initState();
+    _fs.myMembership().then((m) {
+      if (!mounted) return;
+      setState(() {
+        _stream = _fs.streamTeamLeaderboard(m.teamId);
+      });
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
     final game = Theme.of(context).extension<AppGameColors>()!;
+
+    if (_stream == null) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('Leaderboard')),
+        body: const Center(child: CircularProgressIndicator()),
+      );
+    }
 
     return Scaffold(
       appBar: AppBar(title: const Text('Leaderboard')),
@@ -132,7 +153,6 @@ class _LeaderboardRow extends StatelessWidget {
         leading: Container(
           decoration: BoxDecoration(
             shape: BoxShape.circle,
-            // Vibrant ring: a 2-tone gradient + soft glow, not a flat grey.
             gradient: LinearGradient(
               colors: [ringColor, Color.alphaBlend(Colors.white.withOpacity(0.35), ringColor)],
               begin: Alignment.topLeft,
@@ -146,7 +166,15 @@ class _LeaderboardRow extends StatelessWidget {
             child: Text(initial, style: AppTheme.display(size: 16, color: ringColor)),
           ),
         ),
-        title: Text(name, style: const TextStyle(fontWeight: FontWeight.w600)),
+        title: Row(
+          children: [
+            Flexible(child: Text(name, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w600))),
+            if (entry.isLeader) ...[
+              const SizedBox(width: 6),
+              Icon(Icons.shield_rounded, size: 14, color: game.gold),
+            ],
+          ],
+        ),
         subtitle: Row(
           children: [
             RepaintBoundary(

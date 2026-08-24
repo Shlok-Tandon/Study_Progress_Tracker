@@ -4,6 +4,7 @@ import 'package:flutter_animate/flutter_animate.dart';
 import '../models/leveling.dart';
 import '../models/streak_status.dart';
 import '../models/task_item.dart';
+import '../models/team.dart';
 import '../services/firestore_service.dart';
 import '../widgets/celebration_modal.dart';
 import '../widgets/daily_goal_ring.dart';
@@ -48,9 +49,34 @@ class _MyTasksScreenState extends State<MyTasksScreen> {
   late final Stream<QuerySnapshot> _tasksStream = _fs.streamMyTasks(); // cached once
   late final Stream<DocumentSnapshot> _profileStream = _fs.streamMyProfile(); // cached once
 
+  // Resolved once — decides whether the add-task dialog offers the leader's
+  // "assign to teammates" picker.
+  String? _teamId;
+  TeamRole _role = TeamRole.member;
+
   // Pending count as of the latest build, captured before completion so the
   // "cleared your last task" modal isn't fooled by the optimistic update.
   int _pendingCount = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _fs.myMembership().then((m) {
+      if (!mounted) return;
+      setState(() {
+        _teamId = m.teamId;
+        _role = m.role;
+      });
+    });
+  }
+
+  String? _safeMyId() {
+    try {
+      return _fs.myProfileId;
+    } catch (_) {
+      return null;
+    }
+  }
 
   Future<void> _completeTask(TaskItem task) async {
     if (_completingIds.contains(task.id)) return; // guard double-tap
@@ -129,10 +155,29 @@ class _MyTasksScreenState extends State<MyTasksScreen> {
   }
 
   /// Shared dialog for both creating a new task and editing an existing one.
-  void _showTaskDialog({TaskItem? existing}) {
+  /// For a leader creating a NEW task, it also offers an "Assign to" picker
+  /// of their teammates (defaulting to just themselves).
+  Future<void> _showTaskDialog({TaskItem? existing}) async {
     final isEditing = existing != null;
     final titleController = TextEditingController(text: existing?.title ?? '');
     final subjectController = TextEditingController(text: existing?.subject ?? '');
+
+    final myId = _safeMyId();
+
+    // Load the roster only when a leader is adding a new task.
+    List<TeamMember> roster = [];
+    final showAssign = !isEditing && _role == TeamRole.leader && _teamId != null && _teamId!.isNotEmpty;
+    if (showAssign) {
+      try {
+        roster = await _fs.getTeamMembers(_teamId!);
+      } catch (_) {
+        roster = [];
+      }
+    }
+    if (!mounted) return;
+
+    // Default selection is just me.
+    final selectedIds = <String>{if (myId != null) myId};
 
     DateTime dueDate = existing?.dueDate ?? DateTime.now().add(const Duration(days: 2));
     TimeOfDay dueTime = existing != null
@@ -196,6 +241,39 @@ class _MyTasksScreenState extends State<MyTasksScreen> {
                         ]),
                       ),
                     ),
+
+                    // ---- Leader-only: assign to teammates ----
+                    if (showAssign && roster.isNotEmpty) ...[
+                      const SizedBox(height: 16),
+                      Text('Assign to', style: Theme.of(context).textTheme.labelLarge),
+                      const SizedBox(height: 8),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 4,
+                        children: [
+                          for (final m in roster)
+                            FilterChip(
+                              label: Text(m.id == myId ? '${m.name} (You)' : m.name),
+                              avatar: m.isLeader ? const Icon(Icons.shield_rounded, size: 14) : null,
+                              selected: selectedIds.contains(m.id),
+                              onSelected: (v) => setDialogState(() {
+                                if (v) {
+                                  selectedIds.add(m.id);
+                                } else {
+                                  selectedIds.remove(m.id);
+                                }
+                              }),
+                            ),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Pick one or more teammates. Leave just yourself for a personal task.',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -207,19 +285,37 @@ class _MyTasksScreenState extends State<MyTasksScreen> {
                       : () async {
                     final combinedDueDate =
                     DateTime(dueDate.year, dueDate.month, dueDate.day, dueTime.hour, dueTime.minute);
+                    final title = titleController.text.trim();
+                    final subject = subjectController.text.trim();
+
                     if (isEditing) {
                       await _fs.updateTask(
                         taskId: existing!.id,
-                        title: titleController.text.trim(),
-                        subject: subjectController.text.trim(),
+                        title: title,
+                        subject: subject,
                         dueDate: combinedDueDate,
                       );
                     } else {
-                      await _fs.addTask(
-                        title: titleController.text.trim(),
-                        subject: subjectController.text.trim(),
-                        dueDate: combinedDueDate,
-                      );
+                      final selected = roster.where((m) => selectedIds.contains(m.id)).toList();
+                      final onlyMe = selected.isEmpty ||
+                          (selected.length == 1 && myId != null && selected.first.id == myId);
+
+                      if (showAssign && roster.isNotEmpty && !onlyMe) {
+                        await _fs.addTaskForMembers(
+                          title: title,
+                          subject: subject,
+                          dueDate: combinedDueDate,
+                          teamId: _teamId!,
+                          members: selected,
+                        );
+                      } else {
+                        // Personal task (member, or leader assigning only to self).
+                        await _fs.addTask(
+                          title: title,
+                          subject: subject,
+                          dueDate: combinedDueDate,
+                        );
+                      }
                     }
                     if (dialogContext.mounted) Navigator.pop(dialogContext);
                   },

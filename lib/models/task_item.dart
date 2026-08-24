@@ -14,6 +14,12 @@ class TaskItem {
   final String assignedToUid;
   final String assignedToName;
   final String createdBy;
+
+  /// Which team this task belongs to. Stamped at creation from the
+  /// author's team, so team-scoped screens can filter on it and the
+  /// security rules can verify a leader is assigning within their own team.
+  final String teamId;
+
   final bool completed;
 
   TaskItem({
@@ -24,6 +30,7 @@ class TaskItem {
     required this.assignedToUid,
     required this.assignedToName,
     required this.createdBy,
+    required this.teamId,
     required this.completed,
   });
 
@@ -38,9 +45,16 @@ class TaskItem {
       assignedToUid: d['assignedToUid'] as String? ?? '',
       assignedToName: (name == null || name.isEmpty) ? 'Unassigned' : name,
       createdBy: d['createdBy'] as String? ?? '',
+      teamId: d['teamId'] as String? ?? '',
       completed: d['completed'] as bool? ?? false,
     );
   }
+
+  /// Whether this task was assigned by someone other than the person doing
+  /// it — i.e. a leader handed it out. Drives the "from your leader" hint
+  /// on the card, if you choose to show one.
+  bool get assignedByLeader =>
+      createdBy.isNotEmpty && createdBy != assignedToUid;
 
   /// Days between today and the due date. Negative means overdue.
   /// Drives the urgency indicator on the task card — derived from data
