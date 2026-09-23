@@ -2,19 +2,25 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../models/task_item.dart';
 
-/// A task detail bottom sheet. [onComplete] and [onEdit] are only passed
-/// in from My Tasks — the Team tab omits both, since only the assignee
-/// may act on their own task.
+/// A task detail bottom sheet. [onComplete], [onEdit] and [onDelete] are
+/// only passed in from My Tasks — the Team tab omits them, since only the
+/// assignee may act on their own task.
 Future<void> showTaskDetailSheet(
     BuildContext context,
     TaskItem task, {
       VoidCallback? onComplete,
       VoidCallback? onEdit,
+      VoidCallback? onDelete,
     }) {
   return showModalBottomSheet(
     context: context,
     backgroundColor: Colors.transparent,
-    builder: (_) => _TaskDetailSheet(task: task, onComplete: onComplete, onEdit: onEdit),
+    builder: (_) => _TaskDetailSheet(
+      task: task,
+      onComplete: onComplete,
+      onEdit: onEdit,
+      onDelete: onDelete,
+    ),
   );
 }
 
@@ -22,11 +28,19 @@ class _TaskDetailSheet extends StatelessWidget {
   final TaskItem task;
   final VoidCallback? onComplete;
   final VoidCallback? onEdit;
-  const _TaskDetailSheet({required this.task, this.onComplete, this.onEdit});
+  final VoidCallback? onDelete;
+  const _TaskDetailSheet({
+    required this.task,
+    this.onComplete,
+    this.onEdit,
+    this.onDelete,
+  });
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final hasEdit = onEdit != null;
+    final hasDelete = onDelete != null;
 
     return SafeArea(
       child: Container(
@@ -47,29 +61,17 @@ class _TaskDetailSheet extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 20),
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    task.title.isEmpty ? 'Untitled task' : task.title,
-                    style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
-                  ),
-                ),
-                if (onEdit != null)
-                  IconButton(
-                    icon: const Icon(Icons.edit_outlined),
-                    tooltip: 'Edit task',
-                    onPressed: () {
-                      Navigator.pop(context);
-                      onEdit!();
-                    },
-                  ),
-              ],
+            Text(
+              task.title.isEmpty ? 'Untitled task' : task.title,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 12),
             _DetailRow(icon: Icons.menu_book_outlined, label: 'Subject', value: task.subject.isEmpty ? '—' : task.subject),
             _DetailRow(icon: Icons.person_outline, label: 'Assigned to', value: task.assignedToName),
             _DetailRow(icon: Icons.event_outlined, label: 'Due', value: DateFormat("EEEE, MMM d 'at' h:mm a").format(task.dueDate)),
+
             if (onComplete != null) ...[
               const SizedBox(height: 20),
               SizedBox(
@@ -82,6 +84,45 @@ class _TaskDetailSheet extends StatelessWidget {
                   icon: const Icon(Icons.check_circle_outline),
                   label: const Text('Mark complete'),
                 ),
+              ),
+            ],
+
+            if (hasEdit || hasDelete) ...[
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  if (hasEdit)
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: () {
+                          Navigator.pop(context);
+                          onEdit!();
+                        },
+                        icon: const Icon(Icons.edit_outlined, size: 18),
+                        label: const Text('Edit', overflow: TextOverflow.ellipsis),
+                        style: OutlinedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                        ),
+                      ),
+                    ),
+                  if (hasEdit && hasDelete) const SizedBox(width: 12),
+                  if (hasDelete)
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: () {
+                          Navigator.pop(context);
+                          onDelete!();
+                        },
+                        icon: const Icon(Icons.delete_outline, size: 18),
+                        label: const Text('Delete', overflow: TextOverflow.ellipsis),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: scheme.error,
+                          side: BorderSide(color: scheme.error.withOpacity(0.5)),
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                        ),
+                      ),
+                    ),
+                ],
               ),
             ],
           ],
@@ -107,11 +148,13 @@ class _DetailRow extends StatelessWidget {
           Icon(icon, size: 18, color: scheme.onSurfaceVariant),
           const SizedBox(width: 12),
           Text(label, style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: scheme.onSurfaceVariant)),
-          const Spacer(),
-          Flexible(
+          const SizedBox(width: 12),
+          Expanded(
             child: Text(
               value,
               textAlign: TextAlign.right,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
             ),
           ),

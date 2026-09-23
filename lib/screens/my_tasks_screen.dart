@@ -13,6 +13,8 @@ import '../widgets/mascot.dart';
 import '../widgets/tactile_3d.dart';
 import '../widgets/task_card.dart';
 import '../widgets/task_detail_sheet.dart';
+import 'package:flutter/services.dart';
+import '../widgets/skeleton_list.dart';
 
 class MyTasksScreen extends StatefulWidget {
   const MyTasksScreen({super.key});
@@ -80,6 +82,7 @@ class _MyTasksScreenState extends State<MyTasksScreen> {
 
   Future<void> _completeTask(TaskItem task) async {
     if (_completingIds.contains(task.id)) return; // guard double-tap
+    HapticFeedback.heavyImpact();
     final wasLastTask = _pendingCount <= 1; // captured before any await
 
     setState(() => _completingIds.add(task.id));
@@ -150,6 +153,54 @@ class _MyTasksScreenState extends State<MyTasksScreen> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Could not undo. Please try again.')),
+      );
+    }
+  }
+
+  Future<void> _deleteTask(TaskItem task) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete task?'),
+        content: Text('"${task.title}" will be removed.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: Theme.of(context).colorScheme.error),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    ) ??
+        false;
+    if (!confirm || !mounted) return;
+
+    HapticFeedback.heavyImpact();
+    try {
+      await _fs.deleteTask(task.id);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not delete. Please try again.')),
+      );
+      return;
+    }
+
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text('Deleted "${task.title}"'),
+      action: SnackBarAction(label: 'Undo', onPressed: () => _recreateTask(task)),
+    ));
+  }
+
+  Future<void> _recreateTask(TaskItem task) async {
+    try {
+      await _fs.recreateTask(task);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not restore. Please try again.')),
       );
     }
   }
@@ -277,51 +328,59 @@ class _MyTasksScreenState extends State<MyTasksScreen> {
                   ],
                 ),
               ),
-              actions: [
-                TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Cancel')),
-                FilledButton(
-                  onPressed: titleController.text.trim().isEmpty
-                      ? null
-                      : () async {
-                    final combinedDueDate =
-                    DateTime(dueDate.year, dueDate.month, dueDate.day, dueTime.hour, dueTime.minute);
-                    final title = titleController.text.trim();
-                    final subject = subjectController.text.trim();
+                actions: [
+                  if (isEditing)
+                    TextButton(
+                      onPressed: () {
+                        Navigator.pop(dialogContext);
+                        _deleteTask(existing!);
+                      },
+                      style: TextButton.styleFrom(foregroundColor: Theme.of(context).colorScheme.error),
+                      child: const Text('Delete'),
+                    ),
+                  TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Cancel')),
+                  FilledButton(
+                    onPressed: titleController.text.trim().isEmpty
+                        ? null
+                        : () async {
+                      final combinedDueDate =
+                      DateTime(dueDate.year, dueDate.month, dueDate.day, dueTime.hour, dueTime.minute);
+                      final title = titleController.text.trim();
+                      final subject = subjectController.text.trim();
 
-                    if (isEditing) {
-                      await _fs.updateTask(
-                        taskId: existing!.id,
-                        title: title,
-                        subject: subject,
-                        dueDate: combinedDueDate,
-                      );
-                    } else {
-                      final selected = roster.where((m) => selectedIds.contains(m.id)).toList();
-                      final onlyMe = selected.isEmpty ||
-                          (selected.length == 1 && myId != null && selected.first.id == myId);
-
-                      if (showAssign && roster.isNotEmpty && !onlyMe) {
-                        await _fs.addTaskForMembers(
+                      if (isEditing) {
+                        await _fs.updateTask(
+                          taskId: existing!.id,
                           title: title,
                           subject: subject,
                           dueDate: combinedDueDate,
-                          teamId: _teamId!,
-                          members: selected,
                         );
                       } else {
-                        // Personal task (member, or leader assigning only to self).
-                        await _fs.addTask(
-                          title: title,
-                          subject: subject,
-                          dueDate: combinedDueDate,
-                        );
+                        final selected = roster.where((m) => selectedIds.contains(m.id)).toList();
+                        final onlyMe = selected.isEmpty ||
+                            (selected.length == 1 && myId != null && selected.first.id == myId);
+
+                        if (showAssign && roster.isNotEmpty && !onlyMe) {
+                          await _fs.addTaskForMembers(
+                            title: title,
+                            subject: subject,
+                            dueDate: combinedDueDate,
+                            teamId: _teamId!,
+                            members: selected,
+                          );
+                        } else {
+                          await _fs.addTask(
+                            title: title,
+                            subject: subject,
+                            dueDate: combinedDueDate,
+                          );
+                        }
                       }
-                    }
-                    if (dialogContext.mounted) Navigator.pop(dialogContext);
-                  },
-                  child: Text(isEditing ? 'Save' : 'Add'),
-                ),
-              ],
+                      if (dialogContext.mounted) Navigator.pop(dialogContext);
+                    },
+                    child: Text(isEditing ? 'Save' : 'Add'),
+                  ),
+                ],
             );
           },
         );
@@ -332,13 +391,7 @@ class _MyTasksScreenState extends State<MyTasksScreen> {
   Widget _taskArea(BuildContext context, AsyncSnapshot<QuerySnapshot> snap, List<TaskItem> tasks) {
     if (snap.hasError) return Center(child: Text('Something went wrong: ${snap.error}'));
     if (!snap.hasData) {
-      return const Center(
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
-          CircularProgressIndicator(),
-          SizedBox(height: 12),
-          Text('Loading your tasks…'),
-        ]),
-      );
+      return const SkeletonList();
     }
 
     if (tasks.isEmpty) {
@@ -380,6 +433,7 @@ class _MyTasksScreenState extends State<MyTasksScreen> {
                 task,
                 onComplete: () => _completeTask(task),
                 onEdit: () => _showTaskDialog(existing: task),
+                onDelete: () => _deleteTask(task),
               ),
             ),
           ),

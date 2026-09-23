@@ -363,6 +363,28 @@ class FirestoreService {
     });
   }
 
+  Future<void> deleteTask(String taskId) async {
+    await tasksRef.doc(taskId).delete();
+  }
+
+  /// Restores a deleted task with its original fields (for delete Undo).
+  /// createdBy is set to the current user so it passes the self-assign
+  /// create rule; no streak/XP side-effects, matching delete.
+  Future<void> recreateTask(TaskItem task) async {
+    final me = _myProfileId;
+    await tasksRef.add({
+      'title': task.title,
+      'subject': task.subject,
+      'dueDate': Timestamp.fromDate(task.dueDate),
+      'assignedToUid': task.assignedToUid,
+      'assignedToName': task.assignedToName,
+      'teamId': task.teamId,
+      'completed': false,
+      'createdBy': me,
+      'createdAt': FieldValue.serverTimestamp(),
+    });
+  }
+
   // ---------------------------------------------------------------------
   // Completion + undo (unchanged logic)
   // ---------------------------------------------------------------------

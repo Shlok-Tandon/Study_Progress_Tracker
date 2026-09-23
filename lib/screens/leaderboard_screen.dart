@@ -7,6 +7,7 @@ import '../theme/app_game_colors.dart';
 import '../theme/app_theme.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/podium.dart';
+import '../widgets/skeleton_list.dart';
 
 class LeaderboardScreen extends StatefulWidget {
   const LeaderboardScreen({super.key});
@@ -64,7 +65,7 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
     if (_stream == null) {
       return Scaffold(
         appBar: AppBar(title: const Text('Leaderboard')),
-        body: const Center(child: CircularProgressIndicator()),
+        body: const SkeletonList(),
       );
     }
 
@@ -74,7 +75,7 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
         stream: _stream,
         builder: (context, snap) {
           if (snap.hasError) return Center(child: Text('Something went wrong: ${snap.error}'));
-          if (!snap.hasData) return const Center(child: CircularProgressIndicator());
+          if (!snap.hasData) return const SkeletonList();
 
           if (snap.data!.docs.isEmpty) {
             return const EmptyState(

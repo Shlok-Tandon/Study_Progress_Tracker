@@ -13,6 +13,7 @@ import '../widgets/empty_state.dart';
 import '../widgets/tactile_surface.dart';
 import '../widgets/task_card.dart';
 import '../widgets/task_detail_sheet.dart';
+import '../widgets/skeleton_list.dart';
 
 class TeamProgressScreen extends StatefulWidget {
   const TeamProgressScreen({super.key});
@@ -202,12 +203,7 @@ class _TeamProgressScreenState extends State<TeamProgressScreen> {
     if (_teamId == null || _membersStream == null || _tasksStream == null) {
       return Scaffold(
         appBar: AppBar(title: const Text('Team Progress')),
-        body: const Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [CircularProgressIndicator(), SizedBox(height: 12), Text('Loading your team…')],
-          ),
-        ),
+        body: const SkeletonList(),
       );
     }
 
@@ -313,17 +309,7 @@ class _TeamProgressScreenState extends State<TeamProgressScreen> {
                         float: false,
                       );
                     } else if (!memberSnap.hasData || !taskSnap.hasData) {
-                      content = const Center(
-                        key: ValueKey('loading'),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            CircularProgressIndicator(),
-                            SizedBox(height: 12),
-                            Text('Loading team progress…'),
-                          ],
-                        ),
-                      );
+                      content = const SkeletonList(key: ValueKey('loading'));
                     } else {
                       final allTasks = taskSnap.data!.docs.map((d) => TaskItem.fromDoc(d)).where((t) => !t.completed).toList();
                       final groups = _buildGroups(members, allTasks, streakByUid, myId);
